@@ -1,19 +1,22 @@
 import cv2
 import numpy as np
-import pyrealsense2.pyrealsense2 as rs
-import os
-from datetime import datetime
-from inference import get_model
-import supervision as sv
+# import pyrealsense2.pyrealsense2 as rs
+import pyrealsense2 as rs
+from inference_engine import TRTInference
 import time
 
-# Initialize Roboflow model
-print("Loading Roboflow model...")
-model = get_model(model_id="high-stakes-wnyrk/1")
+# Path to your TensorRT engine file
+ENGINE_PATH = "model.engine"  # Update this path to your actual engine file location
 
-# Create Supervision annotators
-bounding_box_annotator = sv.BoxAnnotator()
-label_annotator = sv.LabelAnnotator()
+# Model configuration parameters (must match those in inference_engine.py)
+INPUT_SHAPE = (3, 640, 640)  # (Channels, Height, Width)
+NUM_CLASSES = 1
+CONF_THRESH = 0.25
+IOU_THRESH = 0.45
+
+# Initialize TensorRT inference engine
+print("Loading TensorRT engine...")
+model = TRTInference(ENGINE_PATH, INPUT_SHAPE, NUM_CLASSES, CONF_THRESH, IOU_THRESH)
 
 print("RealSense object detection starting...")
 
@@ -57,31 +60,66 @@ try:
 
             color_image = np.asanyarray(color_frame.get_data())
 
-            # --- Add resizing before inference ---
-            # Example: Resize to 416x416 (common size for YOLO models) or smaller
-            infer_width = 100
-            infer_height = 100
-            # Maintain aspect ratio if desired, or just resize
-            color_image = cv2.resize(color_image, (infer_width, infer_height))
+            # Store original image for display
+            display_image = color_image.copy()
 
-            # Inference
+            # No need to resize here as that's handled in the TRTInferNet.preprocess method
+
+            # Record inference start time
+            t_infer_start = time.time()
+
+            # Inference using TensorRT engine
             try:
-                results = model.infer(color_image)[0]
-                detections = sv.Detections.from_inference(results)
-                labels = [p.class_name for p in results.predictions]
+                detections = model(color_image)  # Use __call__ method directly
+                t_infer_end = time.time()
+                inference_success = True
             except Exception as e:
-                print(f"Error in model inference: {e}")
-                results = None  # Handle case where inference fails
+                print(f"Error in TensorRT inference: {e}")
+                t_infer_end = time.time()
+                inference_success = False
+                detections = []
 
             # Annotation and Display Prep
-            if results:  # Only annotate if inference succeeded
-                annotated_image = bounding_box_annotator.annotate(
-                    scene=color_image.copy(), detections=detections
-                )
-                annotated_image = label_annotator.annotate(
-                    scene=annotated_image, detections=detections, labels=labels
-                )
-                detection_count = len(results.predictions)
+            t_annotate_start = time.time()
+            if inference_success and detections:
+                # Create a copy of the original image for annotation
+                annotated_image = display_image.copy()
+
+                # Draw bounding boxes and add labels
+                detection_count = len(detections)
+                for det in detections:
+                    # det format: [x1, y1, x2, y2, confidence, class_id]
+                    x1, y1, x2, y2, conf, class_id = det
+
+                    # Convert to integers for drawing
+                    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+
+                    # Draw rectangle
+                    cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+                    # Draw label background
+                    label = f"Class {int(class_id)}: {conf:.2f}"
+                    text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+                    cv2.rectangle(
+                        annotated_image,
+                        (x1, y1 - text_size[1] - 4),
+                        (x1 + text_size[0], y1),
+                        (0, 255, 0),
+                        -1
+                    )
+
+                    # Add text
+                    cv2.putText(
+                        annotated_image,
+                        label,
+                        (x1, y1 - 4),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 0, 0),
+                        1
+                    )
+
+                # Add detection count
                 cv2.putText(
                     annotated_image,
                     f"Objects detected: {detection_count}",
@@ -91,17 +129,45 @@ try:
                     (0, 255, 0),
                     2,
                 )
+
+                # Add inference time
+                cv2.putText(
+                    annotated_image,
+                    f"Inference time: {(t_infer_end - t_infer_start)*1000:.1f} ms",
+                    (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 0),
+                    1,
+                )
             else:
-                annotated_image = (
-                    color_image.copy()
-                )  # Show original if inference failed
+                annotated_image = display_image.copy()  # Show original if inference failed
+                # Add text indicating no detections
+                cv2.putText(
+                    annotated_image,
+                    "No detections",
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 0, 255),
+                    2,
+                )
+            t_annotate_end = time.time()
 
             # Display
             cv2.imshow("Object Detection", annotated_image)
             key = cv2.waitKey(1) & 0xFF
 
-            # Print timings (optional, can be noisy)
-            # print(f"Wait: {(t_wait_end - t_wait_start)*1000:.1f} ms, Align: {(t_align_end - t_align_start)*1000:.1f} ms, Infer: {(t_infer_end - t_infer_start)*1000:.1f} ms, Annotate: {(t_annotate_end - t_annotate_start)*1000:.1f} ms, Display: {(t_display_end - t_display_start)*1000:.1f} ms, Total: {(t_end - t_start)*1000:.1f} ms")
+            # Display time information
+            t_frame_end = time.time()
+            frame_time = (t_frame_end - t_infer_start) * 1000
+            t_display_end = time.time()
+
+            # Optional: Uncomment to print timing metrics
+            # print(f"Infer: {(t_infer_end - t_infer_start)*1000:.1f} ms, "
+            #       f"Annotate: {(t_annotate_end - t_annotate_start)*1000:.1f} ms, "
+            #       f"Display: {(t_display_end - t_frame_end)*1000:.1f} ms, "
+            #       f"Total: {frame_time:.1f} ms")
 
             if key == ord("q"):
                 break
