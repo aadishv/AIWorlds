@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
-# import pyrealsense2.pyrealsense2 as rs
-import pyrealsense2 as rs
+import pyrealsense2.pyrealsense2 as rs
+# import pyrealsense2 as rs
 from inference_engine import TRTInference
 import time
 
@@ -11,12 +11,13 @@ ENGINE_PATH = "model.engine"  # Update this path to your actual engine file loca
 # Model configuration parameters (must match those in inference_engine.py)
 INPUT_SHAPE = (3, 640, 640)  # (Channels, Height, Width)
 NUM_CLASSES = 1
-CONF_THRESH = 0.25
+CONF_THRESH = 0.5  # Increased from 0.25 to 0.5
 IOU_THRESH = 0.45
 
 # Initialize TensorRT inference engine
 print("Loading TensorRT engine...")
-model = TRTInference(ENGINE_PATH, INPUT_SHAPE, NUM_CLASSES, CONF_THRESH, IOU_THRESH)
+model = TRTInference(ENGINE_PATH, INPUT_SHAPE,
+                     NUM_CLASSES, CONF_THRESH, IOU_THRESH)
 
 print("RealSense object detection starting...")
 
@@ -95,11 +96,13 @@ try:
                     x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
 
                     # Draw rectangle
-                    cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.rectangle(annotated_image, (x1, y1),
+                                  (x2, y2), (0, 255, 0), 2)
 
                     # Draw label background
                     label = f"Class {int(class_id)}: {conf:.2f}"
-                    text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+                    text_size = cv2.getTextSize(
+                        label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
                     cv2.rectangle(
                         annotated_image,
                         (x1, y1 - text_size[1] - 4),

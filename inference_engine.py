@@ -1,12 +1,12 @@
 import tensorrt as trt
 import pycuda.driver as cuda
-import pycuda.autoinit  # Manages CUDA context
+import pycuda.autoinit  # This import is necessary to initialize CUDA context, even though it's not directly referenced
 import numpy as np
 import cv2
 import time
 import sys
 
-# --- Configuration ---
+# Configuration and preprocessing constants (adjust as needed)
 # Path to your TensorRT engine file on the Jetson Nano
 ENGINE_PATH = 'model.engine'
 
@@ -20,7 +20,7 @@ INPUT_SHAPE = (3, 640, 640)
 NUM_CLASSES = 1  # <--- ADJUST THIS BASED ON YOUR DATASET
 
 # Confidence and IoU thresholds for filtering detections
-CONF_THRESH = 0.25
+CONF_THRESH = 0.5  # Increased from 0.25 to 0.5
 IOU_THRESH = 0.45
 
 # --- TensorRT Initialization ---
@@ -50,21 +50,26 @@ def allocate_buffers(engine):
     stream = cuda.Stream()
 
     for binding in engine:
-        size = trt.volume(engine.get_binding_shape(binding)) * \
-            engine.get_binding_dtype(binding).itemsize
+        # Calculate size in bytes and number of elements
+        shape = engine.get_binding_shape(binding)
         dtype = trt.nptype(engine.get_binding_dtype(binding))
+        # Calculate total number of elements in the tensor
+        elem_count = trt.volume(shape)
+        # Calculate size in bytes
+        size_bytes = elem_count * dtype().itemsize
+        
         # Allocate host and device buffers
-        host_buffer = cuda.pagelocked_empty(size // dtype.itemsize, dtype)
-        device_buffer = cuda.mem_alloc(size)
+        host_buffer = cuda.pagelocked_empty(elem_count, dtype)
+        device_buffer = cuda.mem_alloc(size_bytes)
 
         bindings.append(int(device_buffer))
 
         if engine.binding_is_input(binding):
             inputs.append({'host': host_buffer, 'device': device_buffer,
-                          'shape': engine.get_binding_shape(binding)})
+                          'shape': shape})
         else:
             outputs.append({'host': host_buffer, 'device': device_buffer,
-                           'shape': engine.get_binding_shape(binding)})
+                           'shape': shape})
 
     print("Input and output buffers allocated.")
     return inputs, outputs, bindings, stream
@@ -328,13 +333,22 @@ class TRTInference:
         """
         Cleans up TensorRT resources.
         """
-        del self.stream
-        del self.outputs
-        del self.inputs
-        del self.bindings
-        del self.context
-        del self.engine
-        print("TensorRT resources cleaned up.")
+        try:
+            if hasattr(self, 'stream'):
+                del self.stream
+            if hasattr(self, 'outputs'):
+                del self.outputs
+            if hasattr(self, 'inputs'):
+                del self.inputs
+            if hasattr(self, 'bindings'):
+                del self.bindings
+            if hasattr(self, 'context'):
+                del self.context
+            if hasattr(self, 'engine'):
+                del self.engine
+            print("TensorRT resources cleaned up.")
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
 
     def __call__(self, image_np):
         """
