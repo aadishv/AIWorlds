@@ -1,0 +1,5 @@
+Eval on 2025-04-19 23:06:57.780213
+Total time taken: 75.72 seconds for 207 images
+Average time per image: 0.37 seconds
+Images per second: 2.73
+

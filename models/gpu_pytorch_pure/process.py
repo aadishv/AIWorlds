@@ -1,115 +1,137 @@
-# postprocess.py (or process.py)
-import torch
-import torchvision
-import numpy as np
+import os
 import time
 import logging
-# Make sure you copy the non_max_suppression function and its helpers
-from utils.utils import non_max_suppression, xywh2xyxy, box_iou # Add any needed utils
 
+from flask import Flask, jsonify
+import numpy as np
+import torch
+import torchvision
+
+# Import your utility functions
+from utils.utils import non_max_suppression, xywh2xyxy, box_iou
+
+app = Flask(__name__)
 LOGGER = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-# --- Load Raw Data ---
-input_filename = 'trt_output.npy'
-try:
-    output_data = np.load(input_filename)
-    print(f"Loaded TRT output from {input_filename}, Shape: {output_data.shape}")
-    assert len(output_data.shape) == 3 and output_data.shape[0] == 1 and output_data.shape[2] == 9, "Unexpected shape in loaded data"
-except FileNotFoundError:
-    print(f"Error: {input_filename} not found. Run the inference script (tensor.py) first.")
-    exit()
-except Exception as e:
-    print(f"Error loading or verifying {input_filename}: {e}")
-    exit()
+#
+# ============ ONE‐TIME INITIALIZATION ============
+#
+# Model output filename (assumed to be in the same directory or provide absolute path)
+INPUT_FILENAME = 'trt_output.npy'
 
-# --- Perform NMS ---
-device = torch.device('cpu')
-# device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu') # Optional GPU
-print(f"Using device for NMS processing: {device}")
+# NMS & device settings
+DEVICE = torch.device('cpu')  # or 'cuda:0' if you like
+CONF_THRES = 0.7
+IOU_THRES = 0.5
+CLASSES = None
+AGNOSTIC_NMS = False
+MAX_DET = 1000
+NM = 0  # number of masks (0 if no segmentation masks)
 
-output_tensor = torch.from_numpy(output_data).to(device)
-print(f"Converted output type: {type(output_tensor)}, Device: {output_tensor.device}")
+# Class names mapping
+CLASS_NAMES = {
+    0: "blue ring",
+    1: "goal",
+    2: "red ring",
+    3: "robot"
+}
 
-conf_thres = 0.7
-iou_thres = 0.5
-classes = None
-agnostic_nms = False
-max_det = 1000
+LOGGER.info(
+    f"Starting Flask server with torch {torch.__version__} / torchvision {torchvision.__version__}")
+LOGGER.info(f"Using device: {DEVICE}")
 
-try:
-    print(f"Running NMS with torch {torch.__version__} and torchvision {torchvision.__version__}")
-    final_detections = non_max_suppression(output_tensor,
-                                           conf_thres,
-                                           iou_thres,
-                                           classes,
-                                           agnostic_nms,
-                                           max_det=max_det,
-                                           nm=0) # nm=0 masks
-except Exception as e:
-    print(f"Error during NMS processing: {e}")
-    print("Ensure torch and torchvision are correctly installed and compatible in this Python environment.")
-    exit()
+#
+# ============ ROUTES ============
+#
 
-# --- Process final_detections ---
-if final_detections and final_detections[0] is not None:
-    # Detections for the first (and only) image in the batch
-    # Move to CPU and convert back to NumPy for easier handling
-    detections_for_image0 = final_detections[0].cpu().numpy() # Shape: [N, 6] -> [x1, y1, x2, y2, confidence, class_index]
 
-    print(f"Detected {len(detections_for_image0)} objects in total after NMS.")
+@app.route('/ping', methods=['GET'])
+def ping():
+    """
+    Loads the .npy file, runs NMS, and returns detections + per‐class counts as JSON.
+    """
+    # 1. Load the Triton/TensorRT output
+    if not os.path.exists(INPUT_FILENAME):
+        return jsonify({
+            "error": f"File not found: {INPUT_FILENAME}. Run your inference step first."
+        }), 404
 
-    # **** START: Added code for counting per class ****
-    if len(detections_for_image0) > 0:
-        # Extract the class index column (the 6th column, index 5)
-        # Convert indices to integers
-        detected_class_indices = detections_for_image0[:, 5].astype(int)
+    try:
+        raw_output = np.load(INPUT_FILENAME)
+        # Expect shape [1, N, 9]
+        assert raw_output.ndim == 3 and raw_output.shape[0] == 1 and raw_output.shape[2] == 9
+    except Exception as e:
+        LOGGER.exception("Failed loading or validating .npy:")
+        return jsonify({"error": str(e)}), 500
 
-        # Count occurrences of each unique class index
-        unique_classes, counts = np.unique(detected_class_indices, return_counts=True)
+    # 2. Convert to torch.Tensor on the correct device
+    try:
+        output_tensor = torch.from_numpy(raw_output).to(DEVICE)
+    except Exception as e:
+        LOGGER.exception("Failed converting to torch.Tensor:")
+        return jsonify({"error": str(e)}), 500
 
-        # --- IMPORTANT: Define your class names here ---
-        # Create a dictionary mapping the class index (0, 1, 2, 3) to your actual class names
-        # Make sure the indices match how your model was trained!
-        class_names = {
-            0: "blue ring",   # <-- REPLACE THIS
-            1: "goal",   # <-- REPLACE THIS
-            2: "red ring",   # <-- REPLACE THIS
-            3: "robot"    # <-- REPLACE THIS
-        }
-        # --- End of class name definition ---
+    # 3. Run non‐max suppression
+    try:
+        dets = non_max_suppression(
+            output_tensor,
+            CONF_THRES,
+            IOU_THRES,
+            CLASSES,
+            AGNOSTIC_NMS,
+            max_det=MAX_DET,
+            nm=NM
+        )
+    except Exception as e:
+        LOGGER.exception("Error during NMS:")
+        return jsonify({"error": str(e)}), 500
 
-        print("\nCounts per class:")
-        found_something = False
-        # Create a dictionary to store counts, initializing known classes to 0
-        class_counts = {idx: 0 for idx in class_names.keys()}
-        # Update counts for detected classes
-        for class_index, count in zip(unique_classes, counts):
-             class_counts[class_index] = count
+    # 4. Process the first (and only) batch element
+    if not dets or dets[0] is None or dets[0].numel() == 0:
+        # No detections
+        return jsonify({
+            "detections": [],
+            "counts": {name: 0 for name in CLASS_NAMES.values()}
+        })
 
-        # Print counts for all known classes
-        for class_index, count in class_counts.items():
-             class_name = class_names.get(class_index, f"Unknown Class {class_index}") # Get name or use index safely
-             print(f"  - {class_name}: {count}")
-             if count > 0:
-                 found_something = True
+    # Move to CPU / numpy
+    dets_np = dets[0].cpu().numpy()  # shape [M, 6] => x1,y1,x2,y2,conf,cls
 
-        if not found_something:
-            print("  (No objects found meeting thresholds for known classes)")
+    # 5. Build the per‐detection list
+    detections_list = []
+    for x1, y1, x2, y2, conf, cls_idx in dets_np:
+        cls_idx = int(cls_idx)
+        detections_list.append({
+            "x1": float(x1),
+            "y1": float(y1),
+            "x2": float(x2),
+            "y2": float(y2),
+            "confidence": float(conf),
+            "class_index": cls_idx,
+            "class_name": CLASS_NAMES.get(cls_idx, f"Unknown({cls_idx})")
+        })
 
-    else:
-        # This case should technically not happen if len(detections_for_image0) > 0,
-        # but good for completeness.
-        print("\nCounts per class:")
-        print("  (No objects detected)")
+    # 6. Count per‐class
+    class_indices = dets_np[:, 5].astype(int)
+    unique, counts = np.unique(class_indices, return_counts=True)
+    counts_dict = {CLASS_NAMES[c]: int(cnt) for c, cnt in zip(unique, counts)}
 
-    # **** END: Added code for counting per class ****
+    # Ensure we report zero for classes not detected
+    for idx, name in CLASS_NAMES.items():
+        counts_dict.setdefault(name, 0)
 
-    # Add your code here to scale boxes back to original image size, draw boxes, etc.
-    # You can still iterate through 'detections_for_image0' for drawing:
-    # for det in detections_for_image0:
-    #    x1, y1, x2, y2, conf, cls_idx = det
-    #    # ... scale coordinates ...
-    #    # ... draw box ...
+    # 7. Return JSON
+    return jsonify({
+        "detections": detections_list,
+        "counts": counts_dict
+    })
 
-else:
-    print("No objects detected after NMS.")
+
+#
+# ============ ENTRY POINT ============
+#
+if __name__ == '__main__':
+    # The server will reload by default if you run in debug mode.
+    # In production, use gunicorn or similar.
+    app.run(host='0.0.0.0', port=5000, debug=False)
