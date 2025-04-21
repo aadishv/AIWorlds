@@ -1,0 +1,44 @@
+(note: this is a test thing)
+
+Eval on 2025-04-19 23:04:22.516147
+Total time taken: 0.00 seconds for 207 images
+Average time per image: 0.00 seconds
+Images per second: 2696338.29
+
+Eval on 2025-04-19 23:04:27.640208
+Total time taken: 0.00 seconds for 207 images
+Average time per image: 0.00 seconds
+Images per second: 2647015.02
+
+Eval on 2025-04-19 23:04:28.949588
+Total time taken: 0.00 seconds for 207 images
+Average time per image: 0.00 seconds
+Images per second: 2531256.35
+
+Eval on 2025-04-19 23:04:30.464452
+Total time taken: 0.00 seconds for 207 images
+Average time per image: 0.00 seconds
+Images per second: 2561123.68
+
+Eval on 2025-04-19 23:13:08.554810
+Total time taken: 0.00 seconds for 207 images
+Average time per image: 0.00 seconds
+Images per second: 48639.83
+
+Eval on 2025-04-19 23:13:22.544128
+Total time taken: 0.00 seconds for 207 images
+Average time per image: 0.00 seconds
+Images per second: 49358.78
+
+
+Eval on 2025-04-19 23:13:27.010186
+Total time taken: 0.00 seconds for 207 images
+Average time per image: 0.00 seconds
+Images per second: 45416.17
+
+
+Eval on 2025-04-19 23:13:44.211273
+Total time taken: 0.00 seconds for 207 images
+Average time per image: 0.00 seconds
+Images per second: 47691.34
+
