@@ -148,7 +148,7 @@ class TRTInference:
         print("Pinging...")
         start = time.time()
         result = ping(out3d)
-        if result == None:
+        if result is None:
             result = []
         print(len(result), "- took", time.time() - start, "seconds")
         return result
