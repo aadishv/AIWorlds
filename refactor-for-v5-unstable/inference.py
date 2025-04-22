@@ -29,7 +29,7 @@ class InferenceEngine:
         self,
         engine_path: str,
         nms_params={
-            "conf_thres": 0.7,
+            "conf_thres": 0.3,
             "iou_thres": 0.5,
             "max_det": 50,
             "classes": ["blue", "goal", "red", "bot"],
