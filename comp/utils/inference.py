@@ -72,7 +72,8 @@ class InferenceEngine:
         inputs, outputs, bindings = [], [], []
         stream = cuda.Stream()
         for binding in engine:
-            size = trt.volume(engine.get_binding_shape(binding)) * engine.max_batch_size
+            size = trt.volume(engine.get_binding_shape(
+                binding)) * engine.max_batch_size
             dtype = trt.nptype(engine.get_binding_dtype(binding))
 
             host_mem = cuda.pagelocked_empty(size, dtype)
@@ -199,16 +200,14 @@ class InferenceEngine:
         for x1, y1, x2, y2, conf, cls in det:
             cls = int(cls)
             d = Detection(
-                x=(x1 + x2) / 2,
-                y=(y1 + y2) / 2,
-                width=x2 - x1,
-                height=y2 - y1,
+                x=float((x1 + x2) / 2),
+                y=float((y1 + y2) / 2),
+                width=float(x2 - x1),
+                height=float(y2 - y1),
                 cls=cls,
-                depth=0,
+                depth=float(0),
             )
             detections.append(d.serialize())
-        with open("detections.json", "w") as f:
-            json.dump(detections, f)
         return detections
 
     # MARK: - main entry point
@@ -220,7 +219,8 @@ class InferenceEngine:
         try:
             out3d = raw.reshape(self.output_shape)
         except ValueError as e:
-            print(f"ERROR: cannot reshape {raw.size} → {self.output_shape}: {e}")
+            print(
+                f"ERROR: cannot reshape {raw.size} → {self.output_shape}: {e}")
             return
 
         result = self._do_nms(out3d)

@@ -1,5 +1,8 @@
-import json
 import random
+
+DASHBOARD_URL = "http://192.168.86.98:5000"
+WORKER_30_URL = "http://192.168.86.98:5000"
+INFERENCE_5_URL = "http://192.168.86.98:4000"
 
 
 class Detection:
@@ -16,13 +19,16 @@ class Detection:
         # Validate coordinates and sizes
         for name, value in (("x", x), ("y", y), ("width", width), ("height", height)):
             if not isinstance(value, (int, float)):
-                raise TypeError(f"{name} must be a number, got {type(value).__name__}")
+                raise TypeError(
+                    f"{name} must be a number, got {type(value).__name__}")
             if not (0.0 <= value <= 640.0):
-                raise ValueError(f"{name} must be between 0 and 640, got {value}")
+                raise ValueError(
+                    f"{name} must be between 0 and 640, got {value}")
 
         # Validate class id
         if not isinstance(cls, int):
-            raise TypeError(f"cls must be an integer, got {type(cls).__name__}")
+            raise TypeError(
+                f"cls must be an integer, got {type(cls).__name__}")
         if cls not in self.VALID_CLASSES:
             raise ValueError(
                 f"cls must be one of {sorted(self.VALID_CLASSES)}, got {cls}"
@@ -30,7 +36,8 @@ class Detection:
 
         # Validate depth
         if not isinstance(depth, (int, float)):
-            raise TypeError(f"depth must be a number, got {type(depth).__name__}")
+            raise TypeError(
+                f"depth must be a number, got {type(depth).__name__}")
 
         # Assign
         self.x = float(x)

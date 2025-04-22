@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Camera + Detections @ 10 FPS</title>
+  <style>
+    body, html { margin: 0; padding: 0; overflow: hidden; }
+    canvas { display: block; background: #000; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <script>
+  const MODEL_W = 640;    // width of the image the model saw
+  const MODEL_H = 640;    // height of the image the model saw
+
+    // Configuration
+    const FPS = 5;
+    const IMAGE_URL = 'http://192.168.86.98:5000/image.jpg';
+    const DETECTIONS_URL = 'http://192.168.86.98:4000/detections';
+
+    // Canvas setup
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Single Image object re‐used each frame
+    const img = new Image();
+    img.crossOrigin = 'anonymous';  // in case you need it
+
+    // When an image loads, draw it + fetch & overlay detections
+    img.onload = () => {
+      // Resize canvas to match incoming image
+      if (canvas.width !== img.width || canvas.height !== img.height) {
+        canvas.width = img.width;
+        canvas.height = img.height;
+      }
+      // Draw the camera image
+      ctx.drawImage(img, 0, 0);
+
+      // Fetch detections and overlay them
+      fetch(DETECTIONS_URL)
+        .then(res => res.json())
+        .then(json => {
+          if (!json.stuff) return;
+          ctx.lineWidth = 2;
+          ctx.font = '16px sans-serif';
+          json.stuff.forEach(det => {
+            const { x, y, width, height } = det;
+            // Draw box
+            ctx.strokeStyle = 'red';
+            const x_tl = det.x - det.width/2;
+            const y_tl = det.y - det.height/2;
+            ctx.strokeRect(x_tl * canvas.width / MODEL_W, y_tl * canvas.height / MODEL_H, det.width * canvas.width / MODEL_W, det.height * canvas.height / MODEL_H);
+
+            // Gather all other fields besides x,y,width,height
+            const infoKeys = Object.keys(det)
+              .filter(k => !['x','y','width','height'].includes(k));
+            const infoText = infoKeys
+              .map(k => `${k}:${det[k]}`)
+              .join('  ');
+            // Position text just above box (or inside if too close to top)
+            let textX = x;
+            let textY = y - 5;
+            if (textY < 12) textY = y + 16;
+
+            // Optional: draw a little semi‐opaque background for readability
+            const textWidth = ctx.measureText(infoText).width;
+            const textHeight = 16;
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(textX - 1, textY - textHeight + 4, textWidth + 4, textHeight);
+
+            // Draw the info text
+            ctx.fillStyle = 'lime';
+            ctx.fillText(infoText, textX, textY);
+          });
+        })
+        .catch(err => {
+          console.error('Error fetching detections:', err);
+        });
+    };
+
+    // Kick off the loop at exactly FPS
+    function tick() {
+      // Append timestamp to bust caches
+      console.log()
+      img.src = IMAGE_URL + '?t=' + Date.now();
+    }
+
+    // Start interval
+    setInterval(tick, 1000 / FPS);
+    // Trigger first frame immediately
+    tick();
+  </script>
+</body>
+</html>
