@@ -1,16 +1,25 @@
 from camera import Worker30
 from inference import Model
-import threading, time, signal, sys
+import threading
+import time
+import signal
+import sys
+import logging
+
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 shutdown = threading.Event()
+
 
 def handle_sigterm(signum, frame):
     shutdown.set()
 
+
 signal.signal(signal.SIGINT, handle_sigterm)
 signal.signal(signal.SIGTERM, handle_sigterm)
 
-model  = Model("/home/aadish/AIWorlds/comp/utils/best.engine")
+model = Model("/home/aadish/AIWorlds/comp/utils/best.engine")
 worker = Worker30()
 
 threads = []

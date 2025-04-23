@@ -70,35 +70,19 @@ class Processing:
 
     # checked
     def get_depth(self, detection, depth_img):
-        # Compute the bounding box indices for the detection
-        height = detection["height"]
-        width = detection["width"]
-
-        low_limit_x = -0.30
-        high_limit_x = 0.30
-        if detection["class"] == "goal":
-            low_limit_y = 0.40
-            high_limit_y = 0.50
-        else:
-            low_limit_y = -0.3
-            high_limit_y = 0.3
-        # Calculate the indices of 10% of the detection.
-        top = detection["y"] + height * low_limit_y
-        bottom = detection["y"] + height * high_limit_y
-        left = detection["x"] + width * low_limit_x
-        right = detection["x"] + width * high_limit_x
-
-        # Extract depth values and scale them
-        depth_img = depth_img[int(top):int(
-            bottom), int(left):int(right)].astype(float)
-        print(depth_img)
-        depth_img = depth_img * self.depth_scale
-
-        # Filter non-zero depth values
-        depth_img = depth_img[depth_img != 0]
-        # Compute and return mean depth value
-        meanDepth = np.nanmean(depth_img)
-        return meanDepth
+        try:
+            height = detection["height"]
+            width = detection["width"]
+            top = max(detection["y"] - height / 2, 0)
+            bottom = min(detection["y"] + height / 2, depth_img.shape[0])
+            left = max(detection["x"] - width / 2, 0)
+            right = min(detection["x"] + width / 2, depth_img.shape[1])
+            depth_img = depth_img[int(top):int(
+                bottom), int(left):int(right)].astype(float).flatten()
+            p = np.percentile(depth_img[depth_img > 0], 10) * self.depth_scale
+            return p
+        except:
+            return -1
 
     # checked
     def align_frames(self, frames):
@@ -156,6 +140,8 @@ class Worker30:
                     frames)
                 detections = self.processing.detect_objects(color_image)
                 for detection in detections:
+                    # 480, 640
+                    detection['y'] *= 480 / 640
                     depth_value = self.processing.get_depth(
                         detection, depth_image)
                     if np.isnan(depth_value):

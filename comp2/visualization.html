@@ -228,9 +228,6 @@
   <pre id="json-display">No data available yet...</pre>
 </div>
   <script>
-    const MODEL_W = 640;    // width of the image the model saw
-    const MODEL_H = 640;    // height of the image the model saw
-
     // Class color mapping
     const CLASS_COLORS = {
       'blue': 'blue',
@@ -356,9 +353,9 @@
             ctx.strokeStyle = boxColor;
             const x_tl = x - width/2;
             const y_tl = y - height/2;
-            const boxWidth = width * canvas.width / MODEL_W;
-            const boxHeight = height * canvas.height / MODEL_H;
-            ctx.strokeRect(x_tl * canvas.width / MODEL_W, y_tl * canvas.height / MODEL_H, boxWidth, boxHeight);
+            const boxWidth = width;
+            const boxHeight = height;
+            ctx.strokeRect(x_tl, y_tl, boxWidth, boxHeight);
 
             // Build the display text with known fields
             let infoText = `cls:${className}\n`;
@@ -382,8 +379,8 @@
             });
 
             // Position rectangle ABOVE the bounding box
-            const rectX = x_tl * canvas.width / MODEL_W;
-            const rectY = (y_tl * canvas.height / MODEL_H) - textHeight - 12; // Above the box
+            const rectX = x_tl;
+            const rectY = (y_tl) - textHeight - 12; // Above the box
 
             // Draw the filled background rectangle with the same color as the bounding box
             ctx.fillStyle = boxColor;

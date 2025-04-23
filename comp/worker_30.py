@@ -10,8 +10,7 @@ import pyrealsense2 as rs
 from flask import Flask, Response
 from flask_cors import CORS
 
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)
+w
 
 # Global variables to hold the latest image and a lock for thread safety
 latest_image = None
