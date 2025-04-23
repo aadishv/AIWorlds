@@ -1,30 +1,16 @@
-import json
-import sys
 import time
-
+import flask
 import cv2
 import numpy as np
 import pycuda.driver as cuda
 import tensorrt as trt
 import torch
 import torchvision as vision
-from schema import Detection
+from schema import WORKER_30_URL
+import urllib
 
 
 class InferenceEngine:
-    """
-    TensorRT inference wrapper with explicit resource management.
-
-    Usage (option A):
-        runner = TRTInference('best.engine')
-        runner.run('my.jpg')
-        runner.close()
-
-    Usage (option B, context‐manager):
-        with TRTInference('best.engine') as runner:
-            runner.run('my.jpg')
-    """
-
     TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
     # MARK: - Lifecycle-related fucntions
 
@@ -32,7 +18,7 @@ class InferenceEngine:
         self,
         engine_path: str,
         nms_params={
-            "conf_thres": 0.3,
+            "conf_thres": 0.20,
             "iou_thres": 0.5,
             "max_det": 50,
             "classes": ["blue", "goal", "red", "bot"],
@@ -198,16 +184,16 @@ class InferenceEngine:
 
         detections = []
         for x1, y1, x2, y2, conf, cls in det:
-            cls = int(cls)
-            d = Detection(
-                x=float((x1 + x2) / 2),
-                y=float((y1 + y2) / 2),
-                width=float(x2 - x1),
-                height=float(y2 - y1),
-                cls=cls,
-                depth=float(0),
-            )
-            detections.append(d.serialize())
+            d = {
+                "x": float((x1 + x2) / 2),
+                "y": float((y1 + y2) / 2),
+                "width": float(x2 - x1),
+                "height": float(y2 - y1),
+                "class": self.nms_params["classes"][int(cls)],
+                "depth": float(0),
+                "confidence": float(conf),
+            }
+            detections.append(d)
         return detections
 
     # MARK: - main entry point
@@ -221,14 +207,47 @@ class InferenceEngine:
         except ValueError as e:
             print(
                 f"ERROR: cannot reshape {raw.size} → {self.output_shape}: {e}")
-            return
-
-        result = self._do_nms(out3d)
-        return [] if result is None else result
+            return []
+        return self._do_nms(out3d) or []
 
 
-# if __name__ == "__main__":
-#     img_path = "/home/aadish/AIWorlds/eval/eval_images/" + sys.argv[1]
-#     with InferenceEngine("best.engine") as runner:
-#         start = time.time()
-#         runner.run(cv2.imread(img_path))
+class Model:
+    def __init__(self, engine_path):
+        self.engine = InferenceEngine(engine_path)
+        self.output = []
+
+    def close(self):
+        self.engine.close()
+
+    def _get_img(self):
+        try:
+            resp = urllib.request.urlopen(WORKER_30_URL + '/image.jpg')
+            arr = np.frombuffer(resp.read(), dtype=np.uint8)
+            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            return img
+        except Exception:
+            return None
+
+    def main1(self):
+        print("inference.main1")
+        # make the context we built in __init__ current on *this* thread
+        self.engine.cuda_ctx.push()
+        try:
+            while True:
+                img = self._get_img()
+                if img is None:
+                    continue
+                self.output = self.engine.run(img)
+                time.sleep(0.01)
+        finally:
+            # pop when you exit, so you don’t leak
+            self.engine.cuda_ctx.pop()
+
+    def main2(self):
+        print("inference5.main2")
+        app = flask.Flask("inference_5")
+
+        @app.route("/detections", methods=["GET"])
+        def get_detections():
+            return flask.jsonify({"stuff": self.output})
+        app.run(host="0.0.0.0", port=4000, debug=False)

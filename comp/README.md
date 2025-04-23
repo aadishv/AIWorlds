@@ -17,8 +17,15 @@ A lot of different methods of communication were tried, but I always ended up us
 
 Files are only used in the file scope; that is, the worker thread and api threads of each file share data over files instead of HTTP.
 
+Note that even serialized stuff uses 0<x/y<640 -- postprocessing is needed if you want to scale to the camera frame.
+
 **TODOs**
 
 - Implement Oliver's depth stuff (TBD) (test sending over whole row)
 - Implement depth detection (steal VEX's code)
 - Get serial working on worker_30's serialization
+
+
+
+
+x, y, width, height, class, depth, confidence

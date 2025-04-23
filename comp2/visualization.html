@@ -17,8 +17,7 @@
       text-align: center;
     }
     #hi {
-      width: 100vw;
-      max-height: 180px;
+      height: 5vh;
       object-fit: cover;
       object-position: center;
       margin-bottom: 0.5rem;
@@ -164,8 +163,23 @@
       color: #495057;
       background: transparent;
     }
+    .view-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1rem auto;
+      max-width: 700px;
+      background: #fff;
+      padding: 0.5rem 1rem;
+      border: 1px solid #dee2e6;
+      border-top: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .view-toggle .form-check {
+      margin-right: 1rem;
+    }
     @media (max-width: 800px) {
-      .image-container, .json-container, .collapsible-header {
+      .image-container, .json-container, .collapsible-header, .view-toggle {
         max-width: 98vw;
       }
       #hi {
@@ -188,6 +202,20 @@
 <div class="collapsible-header" id="feed-header">
   <span class="toggle-icon">▼</span> Camera Feed
 </div>
+<div class="view-toggle">
+  <div class="form-check form-check-inline">
+    <input class="form-check-input" type="radio" name="viewMode" id="colorView" value="color" checked>
+    <label class="form-check-label" for="colorView">Color Image</label>
+  </div>
+  <div class="form-check form-check-inline">
+    <input class="form-check-input" type="radio" name="viewMode" id="depthView" value="depth">
+    <label class="form-check-label" for="depthView">Depth Map</label>
+  </div>
+  <div class="form-check form-check-inline">
+    <input class="form-check-input" type="radio" name="viewMode" id="noImageView" value="none">
+    <label class="form-check-label" for="noImageView">No Image</label>
+  </div>
+</div>
 <div class="image-container" id="container">
   <img id="camera-feed" class="camera-feed" alt="Camera Feed">
   <canvas id="overlay-canvas"></canvas>
@@ -203,27 +231,31 @@
     const MODEL_W = 640;    // width of the image the model saw
     const MODEL_H = 640;    // height of the image the model saw
 
-    // Class names mapping
-    const CLASS_NAMES = ['blue_ring', 'goal', 'red_ring', 'robot'];
-
     // Class color mapping
     const CLASS_COLORS = {
-      'blue_ring': 'blue',
+      'blue': 'blue',
       'goal': 'darkgoldenrod',
-      'red_ring': 'red',
+      'red': 'red',
       'robot': 'black'
     };
 
     // Configuration
     let FPS = 5;
-    const IMAGE_URL = 'http://192.168.86.98:5000/image.png';
-    const DETECTIONS_URL = 'http://192.168.86.98:4000/detections';
+    const BASE_URL = 'http://192.168.86.98:5000';
+    const COLOR_IMAGE_URL = `${BASE_URL}/image.jpg`;
+    const DEPTH_IMAGE_URL = `${BASE_URL}/depth.jpg`;
+    let CURRENT_IMAGE_URL = COLOR_IMAGE_URL; // Default to color image
+    const DETECTIONS_URL = `${BASE_URL}/detections`;
+    let fetchImage = true; // Flag to determine whether to fetch images
 
     // Elements setup
     const container = document.getElementById('container');
     const cameraFeed = document.getElementById('camera-feed');
     const canvas = document.getElementById('overlay-canvas');
     const ctx = canvas.getContext('2d');
+    const colorViewRadio = document.getElementById('colorView');
+    const depthViewRadio = document.getElementById('depthView');
+    const noImageViewRadio = document.getElementById('noImageView');
 
     // FPS and UI control elements
     const fpsInput = document.getElementById('fps-input');
@@ -262,6 +294,37 @@
       updateDetections();
     };
 
+    // View toggle handlers
+    colorViewRadio.addEventListener('change', function() {
+      if (this.checked) {
+        CURRENT_IMAGE_URL = COLOR_IMAGE_URL;
+        fetchImage = true;
+        // Force refresh of the image
+        if (!isProcessing) {
+          tick();
+        }
+      }
+    });
+
+    depthViewRadio.addEventListener('change', function() {
+      if (this.checked) {
+        CURRENT_IMAGE_URL = DEPTH_IMAGE_URL;
+        fetchImage = true;
+        // Force refresh of the image
+        if (!isProcessing) {
+          tick();
+        }
+      }
+    });
+
+    noImageViewRadio.addEventListener('change', function() {
+      if (this.checked) {
+        fetchImage = false;
+        // Just update detections without fetching a new image
+        updateDetections();
+      }
+    });
+
     // Function to update detections overlay
     function updateDetections() {
       // Clear the previous drawings
@@ -284,12 +347,7 @@
           ctx.lineWidth = 2;
           ctx.font = '12px monospace';
           json.stuff.forEach(det => {
-            const { x, y, width, height, cls, confidence, depth } = det;
-
-            // Get the class name directly using the known 'cls' field
-            const classIndex = parseInt(cls, 10);
-            const className = (classIndex >= 0 && classIndex < CLASS_NAMES.length) ?
-                             CLASS_NAMES[classIndex] : 'unknown';
+            const { x, y, width, height, confidence, depth, class: className } = det;
 
             // Set color based on class name
             const boxColor = CLASS_COLORS[className] || 'red';
@@ -376,8 +434,13 @@
     function tick() {
       if (isProcessing) return; // Don't start a new request if one is in progress
 
-      // Append timestamp to bust caches
-      cameraFeed.src = IMAGE_URL + '?t=' + Date.now();
+      if (fetchImage) {
+        // Append timestamp to bust caches
+        cameraFeed.src = CURRENT_IMAGE_URL + '?t=' + Date.now();
+      } else {
+        // If we're not fetching the image, just update the detections
+        updateDetections();
+      }
     }
 
     // Function to update the FPS
