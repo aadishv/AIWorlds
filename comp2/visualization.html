@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <title>3151A Web Dashboard</title>
-  <!-- Bootstrap 5 CDN -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     html, body {
@@ -29,55 +28,6 @@
       margin-bottom: 1.5rem;
       color: #212529;
       text-shadow: 0 1px 0 #fff, 0 2px 4px rgba(0,0,0,0.04);
-    }
-    .fps-control {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      margin: 1.5rem auto 0.5rem auto;
-      padding: 0.75rem 1.5rem;
-      background: #fff;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-      max-width: 340px;
-    }
-    .fps-control label {
-      margin-bottom: 0;
-      font-weight: 500;
-      color: #495057;
-    }
-    .fps-control input[type="number"] {
-      width: 70px;
-      border: 1px solid #ced4da;
-      padding: 0.25rem 0.5rem;
-      text-align: right;
-      font-size: 1rem;
-    }
-    .fps-control button {
-      padding: 0.25rem 1rem;
-      font-size: 1rem;
-      font-weight: 500;
-      background: #0d6efd;
-      color: #fff;
-      border: none;
-      transition: background 0.15s;
-    }
-    .fps-control button:hover, .fps-control button:focus {
-      background: #0b5ed7;
-      color: #fff;
-    }
-    .fps-warning {
-      color: #dc3545;
-      font-size: 0.98rem;
-      max-width: 600px;
-      margin: 0.5rem auto 1.2rem auto;
-      background: #fff3cd;
-      border: 1px solid #ffeeba;
-      padding: 0.5rem 1rem;
-      text-align: center;
-    }
-    .fps-warning p {
-      margin: 0.25rem 0;
     }
     .collapsible-header {
       display: flex;
@@ -132,12 +82,6 @@
       width: 100%;
       background: #e9ecef;
     }
-    #overlay-canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      pointer-events: none;
-    }
     .hidden {
       display: none !important;
     }
@@ -189,321 +133,100 @@
   </style>
 </head>
 <body>
-<img src="https://team315.org/imgs/00001.png" id="hi" alt="Team 3151A Banner">
-<h1 class="dashboard-title">Team 3151A Web Dashboard</h1>
-<div class="fps-control shadow-sm">
-  <label for="fps-input" class="form-label mb-0">FPS:</label>
-  <input type="number" id="fps-input" min="1" max="30" value="5" class="form-control form-control-sm">
-  <button id="update-fps" class="btn btn-primary btn-sm">Update</button>
-</div>
-<div class="fps-warning alert alert-warning py-2 px-3 mb-3" role="alert">
-  <p class="mb-0"><strong>Warning:</strong> Setting FPS too high may cause freezing as requests won't have enough time to complete.</p>
-</div>
-<div class="collapsible-header" id="feed-header">
-  <span class="toggle-icon">▼</span> Camera Feed
-</div>
-<div class="view-toggle">
-  <div class="form-check form-check-inline">
-    <input class="form-check-input" type="radio" name="viewMode" id="colorView" value="color" checked>
-    <label class="form-check-label" for="colorView">Color Image</label>
-  </div>
-  <div class="form-check form-check-inline">
-    <input class="form-check-input" type="radio" name="viewMode" id="depthView" value="depth">
-    <label class="form-check-label" for="depthView">Depth Map</label>
-  </div>
-  <div class="form-check form-check-inline">
-    <input class="form-check-input" type="radio" name="viewMode" id="noImageView" value="none">
-    <label class="form-check-label" for="noImageView">No Image</label>
-  </div>
-</div>
-<div class="image-container" id="container">
-  <img id="camera-feed" class="camera-feed" alt="Camera Feed">
-  <canvas id="overlay-canvas"></canvas>
-</div>
+  <img src="https://team315.org/imgs/00001.png" id="hi" alt="Team 3151A Banner">
+  <h1 class="dashboard-title">Team 3151A Web Dashboard</h1>
 
-<div class="collapsible-header" id="json-header">
-  <span class="toggle-icon collapsed">►</span> Raw JSON Data
-</div>
-<div class="json-container hidden" id="json-container">
-  <pre id="json-display">No data available yet...</pre>
-</div>
+  <div class="collapsible-header" id="feed-header">
+    <span class="toggle-icon">▼</span> Camera Feed
+  </div>
+
+  <div class="view-toggle">
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="viewMode" id="colorView" value="color" checked>
+      <label class="form-check-label" for="colorView">Color Image</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="viewMode" id="depthView" value="depth">
+      <label class="form-check-label" for="depthView">Depth Map</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="viewMode" id="noImageView" value="none">
+      <label class="form-check-label" for="noImageView">No Image</label>
+    </div>
+  </div>
+
+  <div class="image-container" id="container">
+    <img id="camera-feed" class="camera-feed" src="/stream.mjpg" alt="Live Stream">
+  </div>
+
+  <div class="collapsible-header" id="json-header">
+    <span class="toggle-icon collapsed">►</span> Raw JSON Data
+  </div>
+  <div class="json-container hidden" id="json-container">
+    <pre id="json-display">Waiting for data…</pre>
+  </div>
+
   <script>
-    // Class color mapping
-    const CLASS_COLORS = {
-      'blue': 'blue',
-      'goal': 'darkgoldenrod',
-      'red': 'red',
-      'robot': 'black'
-    };
-
-    // Configuration
-    let FPS = 5;
-    const BASE_URL = 'http://192.168.86.98:5000';
-    const COLOR_IMAGE_URL = `${BASE_URL}/image.jpg`;
-    const DEPTH_IMAGE_URL = `${BASE_URL}/depth.jpg`;
-    let CURRENT_IMAGE_URL = COLOR_IMAGE_URL; // Default to color image
-    const DETECTIONS_URL = `${BASE_URL}/detections`;
-    let fetchImage = true; // Flag to determine whether to fetch images
-
-    // Elements setup
-    const container = document.getElementById('container');
-    const cameraFeed = document.getElementById('camera-feed');
-    const canvas = document.getElementById('overlay-canvas');
-    const ctx = canvas.getContext('2d');
-    const colorViewRadio = document.getElementById('colorView');
-    const depthViewRadio = document.getElementById('depthView');
-    const noImageViewRadio = document.getElementById('noImageView');
-
-    // FPS and UI control elements
-    const fpsInput = document.getElementById('fps-input');
-    const updateFpsButton = document.getElementById('update-fps');
+    // Elements
     const feedHeader = document.getElementById('feed-header');
     const jsonHeader = document.getElementById('json-header');
-    const jsonContainer = document.getElementById('json-container');
-    const jsonDisplay = document.getElementById('json-display');
+    const container  = document.getElementById('container');
+    const jsonCont   = document.getElementById('json-container');
+    const toggleFeed = feedHeader.querySelector('.toggle-icon');
+    const toggleJson = jsonHeader.querySelector('.toggle-icon');
+    const cameraFeed = document.getElementById('camera-feed');
+    const colorView  = document.getElementById('colorView');
+    const depthView  = document.getElementById('depthView');
+    const noneView   = document.getElementById('noImageView');
+    const jsonDisplay= document.getElementById('json-display');
 
-    // Collapsible section states
+    // Collapse logic
     let feedVisible = true;
-    let jsonVisible = false;
-
-    // Store the most recent detection data
-    let lastDetectionData = null;
-
-    // Request state tracking
-    let isProcessing = false;
-
-    // Timeout reference for next tick
-    let tickTimeout;
-
-    // When the image loads, resize the canvas to match
-    cameraFeed.onload = () => {
-      // Resize canvas to match incoming image
-      if (canvas.width !== cameraFeed.naturalWidth || canvas.height !== cameraFeed.naturalHeight) {
-        canvas.width = cameraFeed.naturalWidth;
-        canvas.height = cameraFeed.naturalHeight;
-
-        // Also resize the container to match
-        container.style.width = cameraFeed.naturalWidth + 'px';
-        container.style.height = cameraFeed.naturalHeight + 'px';
-      }
-
-      // Now that we have a new image, fetch & draw the latest detections
-      updateDetections();
-    };
-
-    // View toggle handlers
-    colorViewRadio.addEventListener('change', function() {
-      if (this.checked) {
-        CURRENT_IMAGE_URL = COLOR_IMAGE_URL;
-        fetchImage = true;
-        // Force refresh of the image
-        if (!isProcessing) {
-          tick();
-        }
-      }
-    });
-
-    depthViewRadio.addEventListener('change', function() {
-      if (this.checked) {
-        CURRENT_IMAGE_URL = DEPTH_IMAGE_URL;
-        fetchImage = true;
-        // Force refresh of the image
-        if (!isProcessing) {
-          tick();
-        }
-      }
-    });
-
-    noImageViewRadio.addEventListener('change', function() {
-      if (this.checked) {
-        fetchImage = false;
-        // Just update detections without fetching a new image
-        updateDetections();
-      }
-    });
-
-    // Function to update detections overlay
-    function updateDetections() {
-      // Clear the previous drawings
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Set processing flag to prevent overlapping requests
-      isProcessing = true;
-
-      // Fetch new detections
-      fetch(DETECTIONS_URL)
-        .then(res => res.json())
-        .then(json => {
-          // Store the latest detection data for JSON display
-          lastDetectionData = json;
-
-          // Update JSON display if it's visible
-          updateJsonDisplay();
-
-          if (!json.stuff) return;
-          ctx.lineWidth = 2;
-          ctx.font = '12px monospace';
-          json.stuff.forEach(det => {
-            const { x, y, width, height, confidence, depth, class: className } = det;
-
-            // Set color based on class name
-            const boxColor = CLASS_COLORS[className] || 'red';
-
-            // Draw box with class color
-            ctx.strokeStyle = boxColor;
-            const x_tl = x - width/2;
-            const y_tl = y - height/2;
-            const boxWidth = width;
-            const boxHeight = height;
-            ctx.strokeRect(x_tl, y_tl, boxWidth, boxHeight);
-
-            // Build the display text with known fields
-            let infoText = `cls:${className}\n`;
-            infoText += `conf:${confidence.toFixed(2)}\n`;
-
-            // Add depth if available
-            if (depth !== undefined) {
-              infoText += `depth:${depth.toFixed(2)}`;
-            }
-
-            // Split the text into lines for measuring
-            const lines = infoText.split('\n');
-            const lineHeight = 14; // Height of each line of text
-            const textHeight = lines.length * lineHeight;
-
-            // Find the longest line to determine rectangle width
-            let maxWidth = 0;
-            lines.forEach(line => {
-              const width = ctx.measureText(line).width;
-              maxWidth = Math.max(maxWidth, width);
-            });
-
-            // Position rectangle ABOVE the bounding box
-            const rectX = x_tl;
-            const rectY = (y_tl) - textHeight - 12; // Above the box
-
-            // Draw the filled background rectangle with the same color as the bounding box
-            ctx.fillStyle = boxColor;
-            ctx.fillRect(rectX, rectY, maxWidth + 8, textHeight + 8);
-
-            // Draw each line of text in white
-            ctx.fillStyle = 'white';
-            lines.forEach((line, index) => {
-              ctx.fillText(line, rectX + 4, rectY + 12 + (index * lineHeight));
-            });
-          });
-        })
-        .catch(err => {
-          console.error('Error fetching detections:', err);
-        })
-        .finally(() => {
-          // Mark processing as complete
-          isProcessing = false;
-
-          // Schedule the next tick - only start the next frame when all processing is done
-          scheduleNextTick();
-        });
-    }
-
-    // Function to update the JSON display
-    function updateJsonDisplay() {
-      if (lastDetectionData && document.getElementById('json-display')) {
-        document.getElementById('json-display').textContent =
-          JSON.stringify(lastDetectionData, null, 2);
-      }
-    }
-
-    // Schedule the next tick only if not currently processing
-    function scheduleNextTick() {
-      if (tickTimeout) {
-        clearTimeout(tickTimeout);
-      }
-      // Calculate time until next frame
-      const frameTime = 1000 / FPS;
-      tickTimeout = setTimeout(() => {
-        if (!isProcessing) {
-          tick();
-        }
-      }, frameTime);
-    }
-
-    // Kick off the loop at exactly FPS
-    function tick() {
-      if (isProcessing) return; // Don't start a new request if one is in progress
-
-      if (fetchImage) {
-        // Append timestamp to bust caches
-        cameraFeed.src = CURRENT_IMAGE_URL + '?t=' + Date.now();
-      } else {
-        // If we're not fetching the image, just update the detections
-        updateDetections();
-      }
-    }
-
-    // Function to update the FPS
-    function updateFPS() {
-      const newFPS = parseInt(fpsInput.value, 10);
-      if (isNaN(newFPS) || newFPS < 1) {
-        alert('Please enter a valid FPS value (1 or greater)');
-        return;
-      }
-
-      // Update FPS and reschedule if needed
-      FPS = newFPS;
-      // If there's an active timeout, clear it and reschedule
-      if (tickTimeout) {
-        clearTimeout(tickTimeout);
-        scheduleNextTick();
-      }
-    }
-
-    // Add event listener for the update button
-    updateFpsButton.addEventListener('click', updateFPS);
-
-    // Also update when pressing Enter in the input field
-    fpsInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        updateFPS();
-      }
-    });
-
-    // Toggle camera feed visibility (Finder-style)
     feedHeader.addEventListener('click', () => {
-      const container = document.getElementById('container');
-      const toggleIcon = feedHeader.querySelector('.toggle-icon');
       feedVisible = !feedVisible;
-      if (feedVisible) {
-        container.classList.remove('hidden');
-        toggleIcon.classList.remove('collapsed');
-        toggleIcon.textContent = '▼';
-      } else {
-        container.classList.add('hidden');
-        toggleIcon.classList.add('collapsed');
-        toggleIcon.textContent = '►';
-      }
+      container.classList.toggle('hidden', !feedVisible);
+      toggleFeed.classList.toggle('collapsed', !feedVisible);
+      toggleFeed.textContent = feedVisible ? '▼' : '►';
     });
 
-    // Toggle JSON data visibility
+    let jsonVisible = false;
     jsonHeader.addEventListener('click', () => {
-      const toggleIcon = jsonHeader.querySelector('.toggle-icon');
       jsonVisible = !jsonVisible;
-
-      if (jsonVisible) {
-        jsonContainer.classList.remove('hidden');
-        toggleIcon.classList.remove('collapsed');
-        toggleIcon.textContent = '▼';
-        updateJsonDisplay(); // Update display when shown
-      } else {
-        jsonContainer.classList.add('hidden');
-        toggleIcon.classList.add('collapsed');
-        toggleIcon.textContent = '►';
-      }
+      jsonCont.classList.toggle('hidden', !jsonVisible);
+      toggleJson.classList.toggle('collapsed', !jsonVisible);
+      toggleJson.textContent = jsonVisible ? '▼' : '►';
     });
 
-    // Start the sequence by triggering first frame - only when not processing
-    if (!isProcessing) {
-      tick();
+    // View‐mode logic (just shows or hides the MJPEG for now)
+    function refreshView() {
+      if (colorView.checked) {
+        cameraFeed.src = '/color.mjpg';
+        cameraFeed.classList.remove('hidden');
+      } else if (depthView.checked) {
+        cameraFeed.src = '/depth.mjpg';
+        cameraFeed.classList.remove('hidden');
+      } else {
+        cameraFeed.src = '/no.mjpg';
+        cameraFeed.classList.remove('hidden');
+      }
     }
+    [colorView, depthView, noneView].forEach(radio => {
+      radio.addEventListener('change', refreshView);
+    });
+
+    // SSE for JSON
+    const evt = new EventSource('/events');
+    evt.onmessage = e => {
+      try {
+        const data = JSON.parse(e.data);
+        jsonDisplay.textContent = JSON.stringify(data, null, 2);
+      } catch(err) {
+        console.error('Bad JSON:', e.data);
+      }
+    };
+    evt.onerror = () => {
+      console.warn('SSE connection error');
+    };
   </script>
 </body>
 </html>

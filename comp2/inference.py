@@ -1,14 +1,9 @@
-import time
-import flask
 import cv2
 import numpy as np
 import pycuda.driver as cuda
 import tensorrt as trt
 import torch
 import torchvision as vision
-from schema import WORKER_30_URL
-import urllib
-
 
 class InferenceEngine:
     TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
@@ -209,45 +204,3 @@ class InferenceEngine:
                 f"ERROR: cannot reshape {raw.size} → {self.output_shape}: {e}")
             return []
         return self._do_nms(out3d) or []
-
-
-class Model:
-    def __init__(self, engine_path):
-        self.engine = InferenceEngine(engine_path)
-        self.output = []
-
-    def close(self):
-        self.engine.close()
-
-    def _get_img(self):
-        try:
-            resp = urllib.request.urlopen(WORKER_30_URL + '/image.jpg')
-            arr = np.frombuffer(resp.read(), dtype=np.uint8)
-            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-            return img
-        except Exception:
-            return None
-
-    def main1(self):
-        print("inference.main1")
-        # make the context we built in __init__ current on *this* thread
-        self.engine.cuda_ctx.push()
-        try:
-            while True:
-                img = self._get_img()
-                if img is None:
-                    continue
-                self.output = self.engine.run(img)
-                time.sleep(0.01)
-        finally:
-            # pop when you exit, so you don’t leak
-            self.engine.cuda_ctx.pop()
-
-    def main2(self):
-        print("inference5.main2")
-        app = flask.Flask("inference_5")
-
-        @app.route("/detections", methods=["GET"])
-        def get_detections():
-            return flask.jsonify({"stuff": self.output})
-        app.run(host="0.0.0.0", port=4000, debug=False)

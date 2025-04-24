@@ -1,7 +1,7 @@
+import copy
 import pyrealsense2 as rs
 import cv2
 import numpy as np
-import schema
 import requests
 import time
 from flask import Flask, Response, jsonify
@@ -102,6 +102,8 @@ class Processing:
         # Apply a color map to the depth image
         self.align_frames(frames)
         depth_image = np.asanyarray(self.depth_frame_aligned.get_data())
+        # feed-forward factor, since it is always 3% off
+        depth_image = depth_image / 1.03
         color_image = np.asanyarray(self.color_frame_aligned.get_data())
         # apply color correction to image
         color_image = self.process_image(color_image)
@@ -110,83 +112,3 @@ class Processing:
         depth_map = cv2.applyColorMap(depthImage, cv2.COLORMAP_JET)
 
         return depth_image, color_image, depth_map
-
-    def detect_objects(self, color_image):
-        # get and parse json from localhost:8000/
-        try:
-            detections = requests.get(
-                schema.INFERENCE_5_URL + '/detections')
-            return detections.json()['stuff']
-        except Exception as e:
-            return []
-
-
-class Worker30:
-    def __init__(self):
-        self.camera = Camera()
-        self.camera.start()
-        self.processing = Processing(self.camera.depth_scale)
-        time.sleep(0.5)
-        self.current_detection = []
-        self.current_frames = np.zeros((480, 640, 3), dtype=np.uint8)
-        self._frame_lock = threading.Lock()
-
-    def main1(self):
-        print("worker30.main1")
-        try:
-            while True:
-                frames = self.camera.get_frames()
-                depth_image, color_image, depth_map = self.processing.process_frames(
-                    frames)
-                detections = self.processing.detect_objects(color_image)
-                for detection in detections:
-                    # 480, 640
-                    detection['y'] *= 480 / 640
-                    depth_value = self.processing.get_depth(
-                        detection, depth_image)
-                    if np.isnan(depth_value):
-                        detection['depth'] = -1
-                    else:
-                        detection['depth'] = depth_value
-                    print(detection['depth'], 'camera:163')
-                # with self._frame_lock:
-                self.current_detection = detections
-                self.current_frames = (color_image, depth_map)
-        finally:
-            self.camera.stop()
-
-    def main2(self):
-        print("worker30.main2")
-        app = Flask("worker_30")
-        CORS(app, resources={r"/*": {"origins": "*"}})
-
-        @app.route('/image.jpg')
-        def get_image():
-            # with self._frame_lock:
-            frame = self.current_frames[0].copy()
-            # frame is guaranteed 480×640×3 uint8
-            success, jpg = cv2.imencode('.jpg', frame)
-            if not success:
-                return Response("Failed to encode image", status=500)
-            return Response(jpg.tobytes(), mimetype='image/jpg')
-
-        @app.route('/depth.jpg')
-        def get_depth():
-            # with self._frame_lock:
-            frame = self.current_frames[1].copy()
-            # frame is guaranteed 480×640×3 uint8
-            success, jpg = cv2.imencode('.jpg', frame)
-            if not success:
-                return Response("Failed to encode image", status=500)
-            return Response(jpg.tobytes(), mimetype='image/jpg')
-
-        @app.route('/detections')
-        def get_detections():
-            # with self._frame_lock:
-            detections = self.current_detection.copy()
-            return jsonify({"stuff": detections})
-
-        @app.route('/')
-        def visualization():
-            return open('visualization.html').read()
-        app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
