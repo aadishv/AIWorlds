@@ -227,7 +227,7 @@ def run_eval(process_image) -> str:
     output_text += f"Images per second: {len(IMAGES)/start:.2f}\n"
 
     print(output_text, end="")
-    path = f'./eval_output.txt'
+    path = './eval_output.txt'
     os.system('echo "' + output_text.replace('\n',
               '\\n') + f'" >> {path}')
 

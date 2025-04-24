@@ -1,6 +1,6 @@
 import threading
 import serial
-import time
+import sys
 
 class EventDrivenSerial:
      def __init__(self, port, baudrate, callback, eol=b'\n', timeout=1.0):
@@ -69,7 +69,7 @@ class EventDrivenSerial:
 
 def list_serial_ports():
     """Return a list of available port device names."""
-    ports = list_ports.comports()
+    ports = serial.tools.list_ports.comports()
     return [p.device for p in ports]
 
 

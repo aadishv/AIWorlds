@@ -1,12 +1,7 @@
-import copy
+
 import pyrealsense2 as rs
 import cv2
 import numpy as np
-import requests
-import time
-from flask import Flask, Response, jsonify
-from flask_cors import CORS
-import threading
 
 # from highstakes.py, JetsonExample
 
@@ -81,7 +76,7 @@ class Processing:
                 bottom), int(left):int(right)].astype(float).flatten()
             p = np.percentile(depth_img[depth_img > 0], 10) * self.depth_scale
             return p
-        except:
+        except Exception:
             return -1
 
     # checked

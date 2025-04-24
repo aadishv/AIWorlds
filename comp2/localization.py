@@ -1,4 +1,4 @@
-import numpy as np
+
 
 class Localization:
     def __init__(self, initial_pose):

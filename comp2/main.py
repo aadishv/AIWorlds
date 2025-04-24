@@ -1,11 +1,10 @@
 import threading
 import time
 import signal
-import sys
 import logging
 import numpy as np
 import copy
-from flask import Flask, render_template, Response, jsonify, stream_with_context, Response
+from flask import Flask, stream_with_context, Response
 from flask_cors import CORS
 import cv2
 import json
@@ -52,6 +51,10 @@ class Worker:
 
     def serial_callback(self, data):
         # HANDLE LOCALIZATION
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            return None
         if (self.localization is None) or ('x' in data and 'y' in data and 'theta' in data):
             x = data.get('x', 0)
             y = data.get('y', 0)
@@ -245,7 +248,7 @@ for t in threads:
 shutdown.wait()
 
 # clean up
-model.close()
+worker.model.close()
 # if your threads check shutdown flag, they can exit cleanly
 for t in threads:
     t.join(timeout=1)

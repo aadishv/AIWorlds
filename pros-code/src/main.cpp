@@ -1,118 +1,118 @@
 #include "main.h"
-#include "nlohmann/json.hpp"
-#include "pros/apix.h"
-#include "schema.hpp"
-#include <array>
-#include <iostream>
-#include <utility>
-#include <vector>
+#include "pros/apix.h" // Include LVGL access
+#include "receiver.hpp"
+#include <cstdio>     // Include for snprintf
 
-using namespace nlohmann;
 using namespace std;
-// Frame struct as before
-struct Frame {
-    vector<pair<double, double>> loc;
-    vector<Detection> det = {};
-};
+
+// Forward declaration for the visualizer task
+void visualizer_task();
 
 namespace serial {
-    void activate() {
+    using namespace serial;
+    // Make most_recent_frame accessible (it already is globally in the namespace)
+    optional<Frame> most_recent_frame = nullopt;
+
+    void start() {
         pros::c::serctl(SERCTL_DISABLE_COBS, NULL);
-        cout << "activate" << endl;
+        // TODO: get the actual starting position from the auton selector or smth
+        double ix = 1.0;
+        double iy = 2.0;
+        double theta = 180.0;
+
+        printf("{\"x\": %f,\"y\": %f, \"theta\": %f}\r\n", ix, iy, theta); // Added \r\n for clarity
+        fflush(stdout);
     }
-    std::optional<Frame> get_next_frame() {
-        try {
-            json j;
-            cin >> j;
 
-            if (cin.fail()) {
-                return std::nullopt;
-            }
+    void task() {
+        while (true) {
+            // TODO: get the actual imu reading from the imu
+            double imu_reading = 5.5;
+            printf("{\"imu\": %f}\r\n", imu_reading); // Added \r\n for clarity
+            fflush(stdout);
 
-            // get points
-            vector<pair<double, double>> v(10);
+            most_recent_frame = fetch_frame();
 
-            if (!j.contains("points") || !j["points"].is_array() ||
-                j["points"].size() < 20) {
-                return std::nullopt;
-            }
-
-            int i = 0;
-            for (auto &p : v) {
-                p = make_pair(j["points"][i], j["points"][i + 1]);
-                i += 2;
-            }
-
-            // get detected objects
-            vector<Detection> dets;
-            if (j.contains("dets") && j["dets"].is_array()) {
-                for (auto det : j["dets"]) {
-                    try {
-                        dets.push_back(Detection::from_json(det));
-                    } catch (...) {
-                        // Skip this detection if it fails to parse
-                        continue;
-                    }
-                }
-            }
-
-            return Frame{v, dets};
-        } catch (...) {
-            return std::nullopt;
+            pros::delay(20);
         }
     }
+
 } // namespace serial
 
-void initialize() {}
+// --- Visualizer Task ---
+void visualizer_task() {
+    while (true) {
+        lv_obj_clean(lv_scr_act());
+
+        // NOTE: This is NOT thread-safe. In a real application, use a mutex
+        // or other synchronization mechanism to protect access between
+        // serial::task and visualizer_task. Per your instructions, ignoring this for now.
+        if (serial::most_recent_frame.has_value()) {
+            const auto& frame = serial::most_recent_frame.value();
+
+            for (const auto& detection : frame.detections) {
+                lv_color_t rect_color;
+                if (detection.cls == "red") {
+                    rect_color = lv_color_hex(0xFF0000);
+                } else if (detection.cls == "blue") {
+                    rect_color = lv_color_hex(0x0000FF);
+                } else if (detection.cls == "goal") {
+                    rect_color = lv_color_hex(0xFFFF00);
+                } else if (detection.cls == "robot") {
+                    rect_color = lv_color_hex(0x00FF00);
+                } else {
+                    rect_color = lv_color_hex(0x808080);
+                }
+
+                lv_obj_t* rect = lv_obj_create(lv_scr_act());
+                lv_obj_remove_style_all(rect);
+
+                lv_obj_set_pos(rect, static_cast<lv_coord_t>(detection.x), static_cast<lv_coord_t>(detection.y + 20));
+                lv_obj_set_size(rect, static_cast<lv_coord_t>(detection.w), static_cast<lv_coord_t>(detection.h));
+
+                lv_obj_set_style_bg_color(rect, rect_color, 0);
+                lv_obj_set_style_bg_opa(rect, LV_OPA_50, 0);
+                lv_obj_set_style_border_color(rect, rect_color, 0);
+                lv_obj_set_style_border_width(rect, 2, 0);
+                lv_obj_set_style_border_opa(rect, LV_OPA_COVER, 0);
+
+                lv_obj_t* label = lv_label_create(rect);
+
+                char conf_str[10];
+                snprintf(conf_str, sizeof(conf_str), "%.0f%%", detection.conf * 100.0);
+                lv_label_set_text(label, conf_str);
+
+                lv_obj_set_style_text_color(label, lv_color_white(), 0);
+                lv_obj_set_style_text_opa(label, LV_OPA_COVER, 0);
+
+                lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+            }
+        }
+
+        pros::delay(1000 / 30);
+    }
+}
+// --- End Visualizer Task ---
+
+
+void initialize() {
+    // IMPORTANT: Remove or comment out LLEMU initialization if present
+    // pros::lcd::initialize(); // REMOVE THIS LINE if it exists
+}
 
 void disabled() {}
 void competition_initialize() {}
 void autonomous() {}
 
 void opcontrol() {
-    serial::activate();
+    serial::start();
+    pros::Task serial_task(serial::task);
 
-    lv_obj_t *screen = lv_scr_act();
+    pros::Task screen_task(visualizer_task); // Renamed handle for clarity
 
-    // We'll keep track of the last set of rectangles so we can clear them
-    vector<lv_obj_t *> last_rects;
-
-    while (true) {
-        optional<Frame> frame = serial::get_next_frame();
-        if (!frame.has_value())
-            continue;
-        // Clear previous rectangles
-        for (auto *rect : last_rects) {
-            lv_obj_del(rect);
-        }
-        last_rects.clear();
-
-        // Draw new rectangles for each detection
-        for (const auto &det : frame.value().det) {
-            int x = static_cast<int>(det.x - det.width / 2);
-            int y = static_cast<int>(det.y - det.height / 2);
-            int w = static_cast<int>(det.width);
-            int h = static_cast<int>(det.height);
-
-            lv_obj_t *rect = lv_obj_create(screen);
-            lv_obj_set_size(rect, w, h);
-            lv_obj_set_pos(rect, x, y);
-
-            static lv_style_t style;
-            static bool style_initialized = false;
-            if (!style_initialized) {
-                lv_style_init(&style);
-                lv_style_set_bg_opa(&style, LV_OPA_TRANSP);
-                lv_style_set_border_color(&style, lv_color_hex(0xFF0000));
-                lv_style_set_border_width(&style, 2);
-                style_initialized = true;
-            }
-            lv_obj_add_style(rect, &style, 0);
-
-            last_rects.push_back(rect);
-        }
-
-        lv_task_handler();
-        pros::delay(20);
-    }
+    // Keep opcontrol alive (optional, tasks run independently)
+    // while (true) {
+    //     // Main opcontrol loop logic (e.g., driver control) can go here
+    //     pros::delay(20);
+    // }
 }

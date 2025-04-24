@@ -1,4 +1,4 @@
-import logging
+
 import random
 import threading
 import time
@@ -10,7 +10,6 @@ import pyrealsense2 as rs
 from flask import Flask, Response
 from flask_cors import CORS
 
-w
 
 # Global variables to hold the latest image and a lock for thread safety
 latest_image = None
