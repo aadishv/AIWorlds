@@ -1,1 +1,1 @@
-pros mu --after=run
+pros mu

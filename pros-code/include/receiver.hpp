@@ -7,8 +7,8 @@ namespace serial {
 struct Detection {
     double x;
     double y;
-    double w;
-    double h;
+    double w; // current irrevelant for our use purposes
+    double h; // current irrevelant for our use purposes
     std::string cls;
     double depth;
     double conf;
