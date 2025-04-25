@@ -20,4 +20,3 @@ Example thing the jetson sends to the brain:
   "flag": ""
 }
 ```
-The brain initially sends over smth

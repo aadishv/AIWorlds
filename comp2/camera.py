@@ -1,5 +1,12 @@
-
-import pyrealsense2 as rs
+try:
+    import pyrealsense2 as rs
+    _ = rs.pipeline()
+except AttributeError:
+    import pyrealsense2.pyrealsense2 as rs
+    _ = rs.pipeline()
+except Exception:
+    print("Error importing pyrealsense2")
+    exit(1)
 import cv2
 import numpy as np
 

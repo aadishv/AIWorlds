@@ -19,8 +19,10 @@ log.setLevel(logging.ERROR)
 
 shutdown = threading.Event()
 
+
 def handle_sigterm(signum, frame):
     shutdown.set()
+
 
 signal.signal(signal.SIGINT, handle_sigterm)
 signal.signal(signal.SIGTERM, handle_sigterm)
@@ -34,6 +36,7 @@ pose {x, y, theta}
 }
 """
 
+
 class Worker:
     def __init__(self, engine_path, row):
         # camera stuff
@@ -42,48 +45,57 @@ class Worker:
         self.processing = Processing(self.camera.depth_scale)
         self.current_detections_raw = []
         self.current_detections = []
-        self.current_frames = (np.zeros((480, 640, 3), dtype=np.uint8), np.zeros((480, 640), dtype=np.uint8))
+        self.current_frames = (
+            np.zeros((480, 640, 3), dtype=np.uint8), np.zeros((480, 640), dtype=np.uint8))
         # inference stuff
         self.engine = InferenceEngine(engine_path)
         # serial stuff
         self.measurement_row = row
         self.localization = None
 
-    def serial_callback(self, data):
-        # HANDLE LOCALIZATION
-        try:
-            data = json.loads(data)
-        except json.JSONDecodeError:
-            return None
-        if (self.localization is None) or ('x' in data and 'y' in data and 'theta' in data):
-            x = data.get('x', 0)
-            y = data.get('y', 0)
-            theta = data.get('theta', 0)
-            self.localization = localization.Localization((x, y, theta))
-            pose = data
-        elif self.localization:
-            theta = data.get('theta', 0)
-            measurement = self.current_frames[1][self.measurement_row]
-            self.localization.update(measurement, theta)
-            pose = {
-                'x': self.localization.pose[0],
-                'y': self.localization.pose[1],
-                'theta': self.localization.pose[2]
-            }
-        # HANDLE OBJECTS
-        objects = self.current_detections
-        # HANDLE FLAGS
-        flag = ""
-        return json.dumps({
-            'pose': pose,
-            'stuff': objects,
-            'flag': flag
-        }, indent=None, separators=(',', ':'))
-
     def serial_worker(self):
         print("serial worker")
+
+        def serial_callback(data):
+            def keep_ascii(s): return "".join(
+                c for c in s if ord(c) < 128 and ord(c) > 0)
+            # HANDLE LOCALIZATION
+            data = keep_ascii(data)
+            try:
+                data = json.loads(data)
+                # print(data, "worked")
+            except json.JSONDecodeError as e:
+                # print(
+                #     ' '.join(list(map(lambda a: f'|{a}|{ord(a)}|', data.lstrip()))))
+                # print(f"Error decoding JSON: {e}")
+                return None
+            if (self.localization is None) or ('x' in data and 'y' in data and 'theta' in data):
+                x = data.get('x', 0)
+                y = data.get('y', 0)
+                theta = data.get('theta', 0)
+                self.localization = localization.Localization((x, y, theta))
+                pose = data
+            elif self.localization:
+                theta = data.get('theta', 0)
+                measurement = self.current_frames[1][self.measurement_row]
+                self.localization.update(measurement, theta)
+                pose = {
+                    'x': self.localization.pose[0],
+                    'y': self.localization.pose[1],
+                    'theta': self.localization.pose[2]
+                }
+            # HANDLE OBJECTS
+            objects = self.current_detections
+            # HANDLE FLAGS
+            flag = ""
+            return json.dumps({
+                'pose': pose,
+                'stuff': objects,
+                'flag': flag
+            }, indent=None, separators=(',', ':'))
         self.localization = None
-        self.serial = comms.EventDrivenSerial(comms.prompt_user_for_port(), 9600, self.serial_callback)
+        self.serial = comms.EventDrivenSerial(
+            "/dev/ttyACM1", 115200, serial_callback)  # comms.prompt_user_for_port(comms.list_serial_ports())
         self.serial.serial_worker()
 
     def camera_worker(self):
@@ -108,10 +120,9 @@ class Worker:
                         detection['depth'] = depth_value
                 self.current_detections = [
                     i for i in detections if
-                        i['class'] not in ['red', 'blue'] or
-                        i['confidence'] > 0.6
+                    i['class'] not in ['red', 'blue'] or
+                    i['confidence'] > 0.6
                 ]
-                print(self.serial_callback({}))
         finally:
             self.camera.stop()
 
@@ -142,7 +153,8 @@ class Worker:
                 while True:
                     # Grab the latest frame + detections
                     color_img, depth_map = self.current_frames
-                    img = (color_img if type == 'color' else depth_map if type == 'depth' else np.zeros_like(color_img)).copy()
+                    img = (color_img if type == 'color' else depth_map if type ==
+                           'depth' else np.zeros_like(color_img)).copy()
 
                     # Draw detections onto img
                     for d in self.current_detections:
@@ -177,20 +189,24 @@ class Worker:
                         if depth is not None and depth >= 0:
                             label += f" d={depth:.2f}m"
                         # putText above box
-                        t_w, t_h = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+                        t_w, t_h = cv2.getTextSize(
+                            label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
                         txt_y = y0 - 5 if y0 - 5 > 10 else y0 + t_h + 5
-                        cv2.rectangle(img, (x0, txt_y - t_h - 4), (x0 + t_w + 4, txt_y + 2), color, -1)
-                        cv2.putText(img, label, (x0+2, txt_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+                        cv2.rectangle(img, (x0, txt_y - t_h - 4),
+                                      (x0 + t_w + 4, txt_y + 2), color, -1)
+                        cv2.putText(
+                            img, label, (x0+2, txt_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
                     # JPEG‐encode
-                    success, jpg = cv2.imencode('.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                    success, jpg = cv2.imencode(
+                        '.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
                     if not success:
                         continue
                     frame = jpg.tobytes()
 
                     # yield multipart chunk
                     yield boundary + b'\r\n' \
-                            b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
 
                     # throttle to ~30fps
                     time.sleep(1/30)
@@ -227,7 +243,8 @@ class Worker:
         # Run Flask
         app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
 
-worker = Worker("/home/aadish/AIWorlds/comp2/yolov5s-best.engine", 240)
+
+worker = Worker("/home/aadish/AIWorlds/comp2/yolov5n-best.engine", 240)
 
 threads = []
 # camera worker
@@ -239,6 +256,9 @@ threads.append(t2)
 # app worker
 t3 = threading.Thread(target=worker.app_worker, daemon=True)
 threads.append(t3)
+# serial worker
+t4 = threading.Thread(target=worker.serial_worker, daemon=True)
+threads.append(t4)
 
 # start them all
 for t in threads:
