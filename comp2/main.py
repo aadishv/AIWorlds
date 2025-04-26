@@ -243,32 +243,32 @@ class Worker:
         # Run Flask
         app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
 
-
-worker = Worker("/home/aadish/AIWorlds/comp2/yolov5n-best.engine", 240)
-
-threads = []
-# camera worker
-t1 = threading.Thread(target=worker.camera_worker, daemon=True)
-threads.append(t1)
-# inference worker
-t2 = threading.Thread(target=worker.inference_worker, daemon=True)
-threads.append(t2)
-# app worker
-t3 = threading.Thread(target=worker.app_worker, daemon=True)
-threads.append(t3)
-# serial worker
-t4 = threading.Thread(target=worker.serial_worker, daemon=True)
-threads.append(t4)
-
-# start them all
-for t in threads:
-    t.start()
-
-# now block here until CTRL‑C or SIGTERM
-shutdown.wait()
-
-# clean up
-worker.model.close()
-# if your threads check shutdown flag, they can exit cleanly
-for t in threads:
-    t.join(timeout=1)
+if __name__ = "main":
+    worker = Worker("/home/aadish/AIWorlds/comp2/yolov5n-best.engine", 240)
+    
+    threads = []
+    # camera worker
+    t1 = threading.Thread(target=worker.camera_worker, daemon=True)
+    threads.append(t1)
+    # inference worker
+    t2 = threading.Thread(target=worker.inference_worker, daemon=True)
+    threads.append(t2)
+    # app worker
+    t3 = threading.Thread(target=worker.app_worker, daemon=True)
+    threads.append(t3)
+    # serial worker
+    t4 = threading.Thread(target=worker.serial_worker, daemon=True)
+    threads.append(t4)
+    
+    # start them all
+    for t in threads:
+        t.start()
+    
+    # now block here until CTRL‑C or SIGTERM
+    shutdown.wait()
+    
+    # clean up
+    worker.model.close()
+    # if your threads check shutdown flag, they can exit cleanly
+    for t in threads:
+        t.join(timeout=1)
