@@ -116,11 +116,16 @@ class Worker:
     def inference_worker(self):
         print("inference worker")
         self.engine.cuda_ctx.push()
+        MIN_LATENCY = 1.0 / 20.0
         try:
             while True:
                 img = self.current_frames[0]
+                start_time = time.time()
                 self.current_detections_raw = self.engine.run(img)
-                time.sleep(0.01)
+                time_elapsed = time.time() - start_time
+                if time_elapsed < MIN_LATENCY: # cap at 20 fps
+                    time.sleep(MIN_LATENCY - time_elapsed)
+                    
         finally:
             # pop when you exit, so you don’t leak
             self.engine.cuda_ctx.pop()
