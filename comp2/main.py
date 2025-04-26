@@ -14,16 +14,6 @@ from inference import InferenceEngine
 import comms
 import localization
 
-shutdown = threading.Event()
-
-
-def handle_sigterm(signum, frame):
-    shutdown.set()
-
-
-signal.signal(signal.SIGINT, handle_sigterm)
-signal.signal(signal.SIGTERM, handle_sigterm)
-
 """
 what they send us: {x?, y?, theta}
 what we send them: {
@@ -245,6 +235,15 @@ class Worker:
         app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
 
 if __name__ = "main":
+    shutdown = threading.Event()
+    
+    def handle_sigterm(signum, frame):
+        shutdown.set()
+    
+    
+    signal.signal(signal.SIGINT, handle_sigterm)
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    # initialize worker
     worker = Worker("/home/aadish/AIWorlds/comp2/yolov5n-best.engine", 240)
     
     threads = []
