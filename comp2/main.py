@@ -14,9 +14,6 @@ from inference import InferenceEngine
 import comms
 import localization
 
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)
-
 shutdown = threading.Event()
 
 
@@ -140,6 +137,10 @@ class Worker:
             self.engine.close()
 
     def app_worker(self):
+        # stop excessive logging of requests
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)
+        
         app = Flask("3151App")
         CORS(app, resources={r"/*": {"origins": "*"}})
 
