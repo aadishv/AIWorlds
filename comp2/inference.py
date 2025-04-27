@@ -5,9 +5,9 @@ import tensorrt as trt
 import torch
 import torchvision as vision
 
+
 class InferenceEngine:
     TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
-    # MARK: - Lifecycle-related fucntions
 
     def __init__(
         self,
@@ -193,6 +193,8 @@ class InferenceEngine:
 
     # MARK: - main entry point
     def run(self, img):
+        # every frame:
+        # preprocessing -> input -> tensorrt -> output -> postprocessing (nms) -> json blob
         self._do_preprocessing(img)
         trt_outs = self._do_inference()
 

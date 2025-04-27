@@ -14,7 +14,6 @@ import numpy as np
 
 
 class Camera:
-    # Class handles Camera object instantiation and data requests.
     def __init__(self):
         self.pipeline = rs.pipeline()  # Initialize RealSense pipeline
         self.config = rs.config()
@@ -31,7 +30,6 @@ class Camera:
         self.depth_scale = depth_sensor.get_depth_scale()
 
     def get_frames(self):
-        # Wait and fetch frames from the pipeline
         return self.pipeline.wait_for_frames()
 
     def stop(self):

@@ -1,7 +1,7 @@
 Eval on 2025-04-23 21:10:09.782904 => v5s test
 Total time taken: 22.80 seconds for 207 images
 Average time per image: 0.11 seconds
-Images per second: 9.08
+Images per second: 9.08 => 8.47 (old code w/o NMS)
 
 Eval on 2025-04-23 21:11:06.674479 => v5n test
 Total time taken: 14.26 seconds for 207 images
