@@ -14,19 +14,6 @@ from inference import InferenceEngine
 import comms
 import localization
 
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)
-
-shutdown = threading.Event()
-
-
-def handle_sigterm(signum, frame):
-    shutdown.set()
-
-
-signal.signal(signal.SIGINT, handle_sigterm)
-signal.signal(signal.SIGTERM, handle_sigterm)
-
 """
 what they send us: {x?, y?, theta}
 what we send them: {
@@ -141,17 +128,26 @@ class Worker:
     def inference_worker(self):
         print("inference worker")
         self.engine.cuda_ctx.push()
+        MIN_LATENCY = 1.0 / 20.0
         try:
             while True:
                 img = self.current_frames[0]
+                start_time = time.time()
                 self.current_detections_raw = self.engine.run(img)
-                time.sleep(0.01)
+                time_elapsed = time.time() - start_time
+                if time_elapsed < MIN_LATENCY: # cap at 20 fps
+                    time.sleep(MIN_LATENCY - time_elapsed)
+                    
         finally:
             # pop when you exit, so you don’t leak
             self.engine.cuda_ctx.pop()
             self.engine.close()
 
     def app_worker(self):
+        # stop excessive logging of requests
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)
+        
         def generate(type):
             boundary = b'--frame'
             while True:
@@ -215,6 +211,8 @@ class Worker:
                 # throttle to ~30fps
                 time.sleep(1/30)
 
+       
+        
         app = Flask("3151App")
         CORS(app, resources={r"/*": {"origins": "*"}})
 
@@ -256,36 +254,6 @@ class Worker:
         app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
 
 
-worker = Worker("/home/aadish/AIWorlds/comp2/yolov5n-best.engine", 240) # engine path, Oliver row
-
-threads = []
-# camera worker
-t1 = threading.Thread(target=worker.camera_worker, daemon=True)
-threads.append(t1)
-# inference worker
-t2 = threading.Thread(target=worker.inference_worker, daemon=True)
-threads.append(t2)
-# app worker
-t3 = threading.Thread(target=worker.app_worker, daemon=True)
-threads.append(t3)
-# serial worker
-t4 = threading.Thread(target=worker.serial_worker, daemon=True)
-# threads.append(t4)
-
-# start them all
-for t in threads:
-    t.start()
-
-# now block here until CTRL‑C or SIGTERM
-shutdown.wait()
-
-# clean up
-worker.model.close()
-# if your threads check shutdown flag, they can exit cleanly
-for t in threads:
-    t.join(timeout=1)
-
-
 """
 List of workers:
     Camera worker
@@ -301,3 +269,41 @@ List of workers:
         * Reads serial data from USB port
         * Responds in JSON
 """
+if __name__ = "main":
+    shutdown = threading.Event()
+    
+    def handle_sigterm(signum, frame):
+        shutdown.set()
+    
+    
+    signal.signal(signal.SIGINT, handle_sigterm)
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    # initialize worker
+    worker = Worker("/home/aadish/AIWorlds/comp2/yolov5n-best.engine", 240)
+    
+    threads = []
+    # camera worker
+    t1 = threading.Thread(target=worker.camera_worker, daemon=True)
+    threads.append(t1)
+    # inference worker
+    t2 = threading.Thread(target=worker.inference_worker, daemon=True)
+    threads.append(t2)
+    # app worker
+    t3 = threading.Thread(target=worker.app_worker, daemon=True)
+    threads.append(t3)
+    # serial worker
+    t4 = threading.Thread(target=worker.serial_worker, daemon=True)
+    threads.append(t4)
+    
+    # start them all
+    for t in threads:
+        t.start()
+    
+    # now block here until CTRL‑C or SIGTERM
+    shutdown.wait()
+    
+    # clean up
+    worker.model.close()
+    # if your threads check shutdown flag, they can exit cleanly
+    for t in threads:
+        t.join(timeout=1)
