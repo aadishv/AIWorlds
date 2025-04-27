@@ -12,20 +12,6 @@ import cv2
 import json
 import atexit
 
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)
-
-shutdown = threading.Event()
-
-
-def handle_sigterm(signum, frame):
-    shutdown.set()
-
-
-signal.signal(signal.SIGINT, handle_sigterm)
-signal.signal(signal.SIGTERM, handle_sigterm)
-
-
 class App:
     def __init__(self):
         print("test1")
@@ -73,45 +59,45 @@ class App:
                            'depth' else np.zeros_like(color_img)).copy()
 
                     # Draw detections onto img
-                    # for d in self.most_recent_result['stuff']:
-                    #     x, y = d['x'], d['y']
-                    #     w, h = d['width'], d['height']
-                    #     cls = d['class']
-                    #     conf = d['confidence']
-                    #     depth = d.get('depth', None)
+                    for d in self.most_recent_result['stuff']:
+                        x, y = d['x'], d['y']
+                        w, h = d['width'], d['height']
+                        cls = d['class']
+                        conf = d['confidence']
+                        depth = d.get('depth', None)
 
-                    #     # top‑left corner
-                    #     x0 = int(x - w/2)
-                    #     y0 = int(y - h/2)
-                    #     x1 = int(x + w/2)
-                    #     y1 = int(y + h/2)
+                        # top‑left corner
+                        x0 = int(x - w/2)
+                        y0 = int(y - h/2)
+                        x1 = int(x + w/2)
+                        y1 = int(y + h/2)
 
-                    #     # choose a color
-                    #     color = (0, 0, 255)
-                    #     if cls == 'blue':
-                    #         color = (255, 0, 0)
-                    #     elif cls == 'goal':
-                    #         color = (0, 215, 255)
-                    #     elif cls == 'red':
-                    #         color = (0, 0, 255)
-                    #     elif cls == 'bot':
-                    #         color = (0, 0, 0)
+                        # choose a color
+                        color = (0, 0, 255)
+                        if cls == 'blue':
+                            color = (255, 0, 0)
+                        elif cls == 'goal':
+                            color = (0, 215, 255)
+                        elif cls == 'red':
+                            color = (0, 0, 255)
+                        elif cls == 'bot':
+                            color = (0, 0, 0)
 
-                    #     # rectangle
-                    #     cv2.rectangle(img, (x0, y0), (x1, y1), color, 2)
+                        # rectangle
+                        cv2.rectangle(img, (x0, y0), (x1, y1), color, 2)
 
-                    #     # label text
-                    #     label = f"{cls} {conf:.2f}"
-                    #     if depth is not None and depth >= 0:
-                    #         label += f" d={depth:.2f}m"
-                    #     # putText above box
-                    #     t_w, t_h = cv2.getTextSize(
-                    #         label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
-                    #     txt_y = y0 - 5 if y0 - 5 > 10 else y0 + t_h + 5
-                    #     cv2.rectangle(img, (x0, txt_y - t_h - 4),
-                    #                   (x0 + t_w + 4, txt_y + 2), color, -1)
-                    #     cv2.putText(
-                    #         img, label, (x0+2, txt_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                        # label text
+                        label = f"{cls} {conf:.2f}"
+                        if depth is not None and depth >= 0:
+                            label += f" d={depth:.2f}m"
+                        # putText above box
+                        t_w, t_h = cv2.getTextSize(
+                            label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+                        txt_y = y0 - 5 if y0 - 5 > 10 else y0 + t_h + 5
+                        cv2.rectangle(img, (x0, txt_y - t_h - 4),
+                                      (x0 + t_w + 4, txt_y + 2), color, -1)
+                        cv2.putText(
+                            img, label, (x0+2, txt_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
                     # JPEG‐encode
                     success, jpg = cv2.imencode(
@@ -168,6 +154,8 @@ class App:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+if __name__ != "main":
+    exit()
 with App() as app:
     try:
         threads = []
@@ -179,7 +167,14 @@ with App() as app:
         threads.append(t3)
         t4 = threading.Thread(target=app.run_dashboard, daemon=True)
         threads.append(t4)
+        # all of the crazy lifecycle management stuff
+        shutdown = threading.Event()
 
+        def handle_sigterm(signum, frame):
+            shutdown.set()
+
+        signal.signal(signal.SIGINT, handle_sigterm)
+        signal.signal(signal.SIGTERM, handle_sigterm)
 
         atexit.register(app.close)
 
