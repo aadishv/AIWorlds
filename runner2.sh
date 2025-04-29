@@ -8,9 +8,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "==> Killing processes accessing /dev/video2"
+echo "==> Killing processes accessing /dev/video1"
 # gather PIDs (if any)
-video_pids=$(sudo lsof -t /dev/video2 2>/dev/null || true)
+video_pids=$(lsof -t /dev/video1 2>/dev/null || true)
 if [[ -n "$video_pids" ]]; then
   echo "Found PIDs: $video_pids"
   echo "$video_pids" | xargs sudo kill -9

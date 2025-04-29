@@ -1,208 +1,197 @@
+import os
 import cv2
+import json
+import time
 import numpy as np
-import pycuda.driver as cuda
 import tensorrt as trt
-import torch
-import torchvision as vision
+import pycuda.autoinit     # initializes CUDA driver
+import pycuda.driver as cuda
 
 
 class InferenceEngine:
-    TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+    def __init__(self,
+                 engine_path,
+                 conf_thresh=0.25,
+                 iou_thresh=0.45,
+                 input_size=(640, 640),
+                 profile=True):
+        """
+        engine_path: path to your .engine file
+        conf_thresh: object confidence threshold
+        iou_thresh: NMS IoU threshold
+        input_size: (W, H) that the engine expects
+        profile: if True, prints timing breakdown each run
+        """
+        self.conf_thresh = conf_thresh
+        self.iou_thresh = iou_thresh
+        self.input_w, self.input_h = input_size
+        self.profile = profile
 
-    def __init__(
-        self,
-        engine_path: str,
-        nms_params={
-            "conf_thres": 0.20,
-            "iou_thres": 0.5,
-            "max_det": 50,
-            "classes": ["blue", "goal", "red", "bot"],
-        },
-        input_shape=(1, 3, 640, 640),
-        output_shape=(1, 25200, 9),
-        device_id=0,
-    ):
-        # data
-        self.engine_path = engine_path
-        self.input_shape = input_shape
-        self.output_shape = output_shape
-        self.nms_params = nms_params
-        # set up CUDA device
-        cuda.init()
-        self.device = cuda.Device(device_id)
-        # make_context() pushes the new context on the stack
-        self.cuda_ctx = self.device.make_context()
-
-        with open(self.engine_path, "rb") as f, trt.Runtime(self.TRT_LOGGER) as runtime:
+        # TRT logger, runtime, and engine deserialization
+        self.logger = trt.Logger(trt.Logger.INFO)
+        with open(engine_path, "rb") as f, trt.Runtime(self.logger) as runtime:
             self.engine = runtime.deserialize_cuda_engine(f.read())
-        if self.engine is None:
-            raise SystemExit(f"Failed to load engine '{engine_path}'")
-        self.inputs, self.outputs, self.bindings, self.stream = self._allocate_buffers(
-            self.engine
-        )
-        self.trt_context = self.engine.create_execution_context()
+        self.context = self.engine.create_execution_context()
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-
-    # MARK: - Inference utilities
-    def _allocate_buffers(self, engine):
-        inputs, outputs, bindings = [], [], []
-        stream = cuda.Stream()
-        for binding in engine:
-            size = trt.volume(engine.get_binding_shape(
-                binding)) * engine.max_batch_size
-            dtype = trt.nptype(engine.get_binding_dtype(binding))
-
+        # Allocate host/device buffers for each binding
+        self.bindings = []
+        self.stream = cuda.Stream()
+        for idx in range(self.engine.num_bindings):
+            name = self.engine.get_binding_name(idx)
+            dtype = trt.nptype(self.engine.get_binding_dtype(idx))
+            shape = self.context.get_binding_shape(idx)
+            size = abs(int(np.prod(shape)))
+            # page‐locked host array + device buffer
             host_mem = cuda.pagelocked_empty(size, dtype)
-            device_mem = cuda.mem_alloc(host_mem.nbytes)
-            bindings.append(int(device_mem))
+            dev_mem = cuda.mem_alloc(host_mem.nbytes)
+            self.bindings.append((name, host_mem, dev_mem))
 
-            if engine.binding_is_input(binding):
-                inputs.append({"host": host_mem, "device": device_mem})
-            else:
-                outputs.append({"host": host_mem, "device": device_mem})
+        # after you know your output size, e.g.
+        # output has shape (1, N, 5 + num_classes)
+        # so:
+        self.num_classes = self.context.get_binding_shape(1)[-1] - 5
 
-        return inputs, outputs, bindings, stream
+    def _preprocess(self, image_path):
+        img = cv2.imread(image_path)
+        orig_h, orig_w = img.shape[:2]
+        img_resized = cv2.resize(img, (self.input_w, self.input_h))
+        img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+        img_norm = img_rgb.astype(np.float32) / 255.0
+        img_chw = np.transpose(img_norm, (2, 0, 1))
+        return img_chw, (orig_w, orig_h)
 
-    def _do_preprocessing(self, img):
-        img = cv2.resize(img, (self.input_shape[3], self.input_shape[2]))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = img.astype(np.float32) / 255.0
-        img = img.transpose((2, 0, 1))[None, ...]  # NHWC->NCHW
-        img = np.ascontiguousarray(img)
-
-        # Copy to host buffer
-        np.copyto(self.inputs[0]["host"], img.ravel())
-
-    def _do_inference(self):
-        for inp in self.inputs:
-            cuda.memcpy_htod_async(inp["device"], inp["host"], self.stream)
-        self.trt_context.execute_async_v2(
-            self.bindings, stream_handle=self.stream.handle
-        )
-        for out in self.outputs:
-            cuda.memcpy_dtoh_async(out["host"], out["device"], self.stream)
-        self.stream.synchronize()
-        return [out["host"] for out in self.outputs]
-
-    def close(self):
-        # 1) sync & free your PyCUDA streams/bindings
-        self.stream.synchronize()
-        self.stream = None
-        for entry in (self.inputs or []) + (self.outputs or []):
-            entry["device"].free()
-        self.inputs = None
-        self.outputs = None
-
-        # 2) explicitly drop TRT objects while context is still current
-        #    this will invoke their __del__ (and hence free any TRT internal
-        #    allocations) under the proper context
-        del self.trt_context
-        del self.engine
-        self.trt_context = None
-        self.engine = None
-
-        # 3) now it’s safe to pop the context
-        self.cuda_ctx.pop()
-        self.cuda_ctx = None
-
-    # MARK: - NMS utilies
-    def _xywh2xyxy(self, boxes):
-        # boxes: Tensor[M,4] = [xc,yc,w,h]
-        x_c, y_c, w, h = boxes.unbind(1)
-        return torch.stack((x_c - w / 2, y_c - h / 2, x_c + w / 2, y_c + h / 2), dim=1)
-
-    @torch.no_grad()
-    def _cpu_nms(
-        self,
-        pred: torch.Tensor,
-        conf_thres: float = None,
-        iou_thres: float = None,
-        max_det: int = None,
-    ) -> torch.Tensor:
-        if conf_thres is None:
-            conf_thres = self.nms_params["conf_thres"]
-        if iou_thres is None:
-            iou_thres = self.nms_params["iou_thres"]
-        if max_det is None:
-            max_det = self.nms_params["max_det"]
+    def _postprocess(self, output, orig_size):
         """
-        pred: Tensor[1, N, 5+nc] = [xc, yc, w, h, obj_conf, cls_conf_0, ..., cls_conf_nc-1]
-        returns: Tensor[K,6] = [x1,y1,x2,y2,score,cls_idx]
+        output: np.ndarray of shape (N, 5 + num_classes)
+        orig_size: (orig_w, orig_h)
         """
-        x = pred.squeeze(0)  # [N,5+nc]
-        if x.numel() == 0:
-            return x.new_zeros((0, 6))
+        orig_w, orig_h = orig_size
+        bboxes = []     # in (x,y,w,h) pixel coords
+        scores = []
+        class_ids = []
 
-        # 1) objectness × best class confidence
-        obj_conf = x[:, 4]  # [N]
-        cls_conf_vals, cls_idx = x[:, 5:].max(dim=1)  # both [N]
-        scores = obj_conf * cls_conf_vals  # [N]
+        # 1) Decode & filter by conf_thresh
+        for det in output:
+            x, y, w, h, conf = det[:5]
+            class_conf = det[5:]
+            class_id = int(class_conf.argmax())
+            score = float(conf * class_conf[class_id])
+            if score < self.conf_thresh:
+                continue
 
-        # 2) threshold
-        mask = scores > conf_thres
-        if not mask.any():
-            return x.new_zeros((0, 6))
+            # Convert center->corner & rescale to original image
+            x0 = (x - w/2) * (orig_w / self.input_w)
+            y0 = (y - h/2) * (orig_h / self.input_h)
+            w0 = w * (orig_w / self.input_w)
+            h0 = h * (orig_h / self.input_h)
+            # round to ints for OpenCV NMS
+            bboxes.append([int(x0), int(y0), int(w0), int(h0)])
+            scores.append(score)
+            class_ids.append(class_id)
 
-        x = x[mask]
-        scores = scores[mask]
-        cls_idx = cls_idx[mask]
-
-        # 3) to corner format
-        boxes = self._xywh2xyxy(x[:, :4])  # [M,4]
-
-        keep = vision.ops.nms(boxes, scores, iou_thres)
-        if keep.numel() > max_det:
-            keep = keep[:max_det]
-
-        # 5) gather detections
-        det = torch.cat(
-            (
-                boxes[keep],
-                scores[keep].unsqueeze(1),
-                cls_idx[keep].unsqueeze(1).float(),
-            ),
-            dim=1,
-        )  # [K,6]
-
-        return det
-
-    def _do_nms(self, out3d):
-        det = self._cpu_nms(torch.from_numpy(out3d))
-        if det.numel() == 0:
-            return None
-        det = det.numpy()  # [[x1,y1,x2,y2,score,cls], ...]
-
-        detections = []
-        for x1, y1, x2, y2, conf, cls in det:
-            d = {
-                "x": float((x1 + x2) / 2),
-                "y": float((y1 + y2) / 2),
-                "width": float(x2 - x1),
-                "height": float(y2 - y1),
-                "class": self.nms_params["classes"][int(cls)],
-                "depth": float(0),
-                "confidence": float(conf),
-            }
-            detections.append(d)
-        return detections
-
-    # MARK: - main entry point
-    def run(self, img):
-        # every frame:
-        # preprocessing -> input -> tensorrt -> output -> postprocessing (nms) -> json blob
-        self._do_preprocessing(img)
-        trt_outs = self._do_inference()
-
-        raw = trt_outs[0]
-        try:
-            out3d = raw.reshape(self.output_shape)
-        except ValueError as e:
-            print(
-                f"ERROR: cannot reshape {raw.size} → {self.output_shape}: {e}")
+        # 2) If nothing survived threshold, return empty
+        if not bboxes:
             return []
-        return self._do_nms(out3d) or []
+
+        # 3) Perform NMS per class with OpenCV (C++ speed)
+        keep_all = []
+        # cv2.dnn.NMSBoxes takes boxes in x,y,w,h format
+        for cls in set(class_ids):
+            cls_idxs = [i for i, c in enumerate(class_ids) if c == cls]
+            cls_boxes = [bboxes[i] for i in cls_idxs]
+            cls_scores = [scores[i] for i in cls_idxs]
+            # returns list of [[idx],[idx],...] on success
+            keep = cv2.dnn.NMSBoxes(
+                cls_boxes,
+                cls_scores,
+                self.conf_thresh,
+                self.iou_thresh
+            )
+            if len(keep) > 0:
+                # flatten [[i],[j],...] -> [i,j,...]
+                flat = [k[0] if isinstance(k, (list, tuple, np.ndarray)) else int(k)
+                        for k in keep]
+                # map back to global indices
+                keep_all += [cls_idxs[k] for k in flat]
+
+        # 4) Build the JSON‐style result
+        results = []
+        for i in keep_all:
+            x, y, w, h = bboxes[i]
+            cx = x + w/2
+            cy = y + h/2
+            results.append({
+                "x": float(cx),
+                "y": float(cy),
+                "width": float(w),
+                "height": float(h),
+                "class": int(class_ids[i]),
+                "confidence": float(scores[i]),
+            })
+        return results
+
+    def run(self, image_path):
+        # Optional CPU timing
+        t0 = time.perf_counter()
+        img_chw, orig_size = self._preprocess(image_path)
+        t1 = time.perf_counter()
+
+        # Copy to device
+        _, host_in, dev_in = self.bindings[0]
+        host_in[:] = img_chw.ravel()
+        cuda.memcpy_htod_async(dev_in, host_in, self.stream)
+        t2 = time.perf_counter()
+
+        # GPU timing via CUDA Events
+        start_evt = cuda.Event()
+        end_evt = cuda.Event()
+        start_evt.record(self.stream)
+
+        # Inference
+        binding_addrs = [int(b[2]) for b in self.bindings]
+        self.context.execute_async_v2(
+            bindings=binding_addrs, stream_handle=self.stream.handle)
+
+        end_evt.record(self.stream)
+        # Copy output back
+        _, host_out, dev_out = self.bindings[1]
+        cuda.memcpy_dtoh_async(host_out, dev_out, self.stream)
+        # Wait for everything
+        self.stream.synchronize()
+        t3 = time.perf_counter()
+
+        gpu_time = start_evt.time_till(end_evt)  # ms
+
+        # Reshape output tensor
+        out_shape = self.context.get_binding_shape(
+            1)  # e.g. (1, N, 6+num_classes)
+        output = np.array(host_out).reshape(out_shape)[0]
+        t4 = time.perf_counter()
+
+        # Postprocess
+        results = self._postprocess(output, orig_size)
+        t5 = time.perf_counter()
+
+        if self.profile:
+            print(f"[PROFILE] preprocess: {(t1-t0)*1e3:7.2f} ms")
+            print(f"[PROFILE] h2d copy:   {(t2-t1)*1e3:7.2f} ms")
+            print(f"[PROFILE] inference:  {gpu_time:7.2f} ms")
+            print(f"[PROFILE] d2h copy+:  {(t3-t2)*1e3:7.2f} ms  (incl. sync)")
+            print(f"[PROFILE] postproc:   {(t5-t4)*1e3:7.2f} ms")
+            print(f"[PROFILE] total run:  {(t5-t0)*1e3:7.2f} ms\n")
+
+        return results
+
+
+if __name__ == "__main__":
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--engine", required=True, help="Path to .engine file")
+    p.add_argument("--img", required=True, help="Path to input image")
+    p.add_argument("--profile", action="store_true",
+                   help="Print timing breakdown")
+    args = p.parse_args()
+
+    ie = InferenceEngine(args.engine, profile=args.profile)
+    dets = ie.run(args.img)
+    print(json.dumps(dets, indent=2))

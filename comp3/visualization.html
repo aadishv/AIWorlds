@@ -21,6 +21,7 @@
       object-position: center;
       margin-bottom: 0.5rem;
       border-bottom: 2px solid #dee2e6;
+      min-height: 50px; /* Ensure minimum height */
     }
     .dashboard-title {
       font-weight: 700;
@@ -64,8 +65,9 @@
       transform: rotate(-90deg);
       color: #6c757d;
     }
-    .image-container {
-      position: relative;
+    /* --- Image and Canvas Container --- */
+    .image-canvas-container {
+      position: relative; /* Crucial for absolute positioning of canvas */
       margin: 0 auto 2rem auto;
       display: block;
       background: #fff;
@@ -75,6 +77,7 @@
       max-width: 700px;
       overflow: hidden;
       transition: box-shadow 0.15s;
+      line-height: 0; /* Prevent extra space below image */
     }
     .camera-feed {
       display: block;
@@ -82,6 +85,16 @@
       width: 100%;
       background: #e9ecef;
     }
+    #overlay-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%; /* Make canvas overlay the image */
+      height: 100%;
+      pointer-events: none; /* Allow clicks to pass through */
+    }
+    /* --- End Image and Canvas Container --- */
+
     .hidden {
       display: none !important;
     }
@@ -123,7 +136,7 @@
       margin-right: 1rem;
     }
     @media (max-width: 800px) {
-      .image-container, .json-container, .collapsible-header, .view-toggle {
+      .image-canvas-container, .json-container, .collapsible-header, .view-toggle {
         max-width: 98vw;
       }
       #hi {
@@ -155,8 +168,10 @@
     </div>
   </div>
 
-  <div class="image-container" id="container">
+  <!-- Container for Image and Canvas -->
+  <div class="image-canvas-container" id="container">
     <img id="camera-feed" class="camera-feed" src="/stream.mjpg" alt="Live Stream">
+    <canvas id="overlay-canvas"></canvas> <!-- Canvas for drawing boxes -->
   </div>
 
   <div class="collapsible-header" id="json-header">
@@ -170,15 +185,19 @@
     // Elements
     const feedHeader = document.getElementById('feed-header');
     const jsonHeader = document.getElementById('json-header');
-    const container  = document.getElementById('container');
+    const container  = document.getElementById('container'); // Now the image+canvas container
     const jsonCont   = document.getElementById('json-container');
     const toggleFeed = feedHeader.querySelector('.toggle-icon');
     const toggleJson = jsonHeader.querySelector('.toggle-icon');
     const cameraFeed = document.getElementById('camera-feed');
+    const overlayCanvas = document.getElementById('overlay-canvas'); // Get canvas
+    const ctx = overlayCanvas.getContext('2d'); // Get canvas context
     const colorView  = document.getElementById('colorView');
     const depthView  = document.getElementById('depthView');
     const noneView   = document.getElementById('noImageView');
     const jsonDisplay= document.getElementById('json-display');
+
+    let latestDetections = null; // Store the latest detection data
 
     // Collapse logic
     let feedVisible = true;
@@ -187,6 +206,11 @@
       container.classList.toggle('hidden', !feedVisible);
       toggleFeed.classList.toggle('collapsed', !feedVisible);
       toggleFeed.textContent = feedVisible ? '▼' : '►';
+      if (feedVisible) {
+          requestAnimationFrame(drawBoundingBoxes); // Redraw if becoming visible
+      } else {
+          clearBoundingBoxes(); // Clear if becoming hidden
+      }
     });
 
     let jsonVisible = false;
@@ -197,17 +221,141 @@
       toggleJson.textContent = jsonVisible ? '▼' : '►';
     });
 
-    // View‐mode logic (just shows or hides the MJPEG for now)
+    // --- Bounding Box Drawing Logic ---
+
+    function clearBoundingBoxes() {
+        // Clear the canvas by setting its dimensions (quickest way)
+        // Or use ctx.clearRect if preferred
+        overlayCanvas.width = overlayCanvas.clientWidth;
+        overlayCanvas.height = overlayCanvas.clientHeight;
+        // ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    }
+
+    function drawBoundingBoxes() {
+        if (!latestDetections || !latestDetections.stuff || noneView.checked || !feedVisible) {
+            clearBoundingBoxes();
+            return;
+        }
+
+        // Match canvas resolution to the displayed image size
+        const displayWidth = cameraFeed.clientWidth;
+        const displayHeight = cameraFeed.clientHeight;
+
+        // Check if dimensions are valid
+        if (displayWidth <= 0 || displayHeight <= 0) {
+            requestAnimationFrame(drawBoundingBoxes); // Try again next frame
+            return;
+        }
+
+        overlayCanvas.width = displayWidth;
+        overlayCanvas.height = displayHeight;
+
+        // --- Scaling ---
+        // Get original image dimensions from the JSON payload
+        const originalWidth = latestDetections.image_width ?? 640;
+        const originalHeight = latestDetections.image_height ?? 480;
+
+        if (!originalWidth || !originalHeight) {
+            console.error("JSON data missing 'image_width' or 'image_height'. Cannot scale boxes.");
+            clearBoundingBoxes(); // Clear potentially wrong boxes
+            return; // Cannot proceed without original dimensions
+        }
+
+        const scaleX = displayWidth / originalWidth;
+        const scaleY = displayHeight / originalHeight;
+
+        // --- Drawing Settings ---
+        ctx.lineWidth = 2;
+        ctx.font = "12px Arial"; // Adjusted font size for web
+        ctx.textBaseline = "bottom"; // Align text nicely with background
+
+        // --- Draw each detection ---
+        latestDetections.stuff.forEach(d => {
+            const x = d.x;
+            const y = d.y;
+            const w = d.width;
+            const h = d.height;
+            const cls = d.class;
+            const conf = d.confidence;
+            const depth = d.depth; // Use d.depth directly
+
+            // Calculate scaled top-left corner (x0, y0) and dimensions
+            const boxWidth = w * scaleX;
+            const boxHeight = h * scaleY;
+            const x0 = (x - w / 2) * scaleX;
+            const y0 = (y - h / 2) * scaleY;
+
+            // Choose color based on class
+            let color = '#FF0000'; // Default Red (BGR -> RGB, then hex)
+            if (cls === 'blue') {
+                color = '#0000FF'; // Blue
+            } else if (cls === 'goal') {
+                color = '#FFD700'; // Gold (approximate for cv2's (0, 215, 255))
+            } else if (cls === 'red') {
+                color = '#FF0000'; // Red
+            } else if (cls === 'bot') {
+                color = '#000000'; // Black
+            }
+            // Add more colors as needed
+
+            // Draw rectangle
+            ctx.strokeStyle = color;
+            ctx.strokeRect(x0, y0, boxWidth, boxHeight);
+
+            // Prepare label text
+            let label = `${cls} ${conf.toFixed(2)}`;
+            if (depth !== undefined && depth !== null && depth >= 0) { // Check if depth exists and is valid
+                label += ` d=${depth.toFixed(2)}m`;
+            }
+
+            // Calculate text dimensions and position
+            const textMetrics = ctx.measureText(label);
+            const textWidth = textMetrics.width;
+            const textHeight = 12; // Approximate height based on font size
+            const padding = 4;
+
+            // Position text above box, handle top edge collision
+            let textY = y0 - padding; // Default position above box
+            if (textY < textHeight + padding) { // If too close to top edge
+                textY = y0 + boxHeight + textHeight + padding; // Move below box
+            }
+            const textX = x0 + padding / 2;
+
+            // Draw background rectangle for text
+            ctx.fillStyle = color;
+            ctx.fillRect(
+                textX - padding / 2,
+                textY - textHeight - padding, // Adjust y for background start
+                textWidth + padding,
+                textHeight + padding
+            );
+
+            // Draw label text
+            ctx.fillStyle = '#FFFFFF'; // White text
+            ctx.fillText(label, textX, textY - padding / 2); // Adjust y for text baseline
+        });
+    }
+
+
+    // View‐mode logic
     function refreshView() {
+      let showImage = true;
       if (colorView.checked) {
         cameraFeed.src = '/color.mjpg';
-        cameraFeed.classList.remove('hidden');
       } else if (depthView.checked) {
         cameraFeed.src = '/depth.mjpg';
-        cameraFeed.classList.remove('hidden');
       } else {
-        cameraFeed.src = '/no.mjpg';
-        cameraFeed.classList.remove('hidden');
+        // Use a placeholder or simply hide for 'none'
+        cameraFeed.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // Transparent pixel
+        showImage = false;
+      }
+      cameraFeed.classList.toggle('hidden', !showImage);
+      overlayCanvas.classList.toggle('hidden', !showImage); // Hide canvas too if no image
+
+      if (showImage) {
+          requestAnimationFrame(drawBoundingBoxes); // Redraw boxes when view changes
+      } else {
+          clearBoundingBoxes();
       }
     }
     [colorView, depthView, noneView].forEach(radio => {
@@ -220,13 +368,40 @@
       try {
         const data = JSON.parse(e.data);
         jsonDisplay.textContent = JSON.stringify(data, null, 2);
+        latestDetections = data; // Store latest data
+        // Use requestAnimationFrame for smoother rendering synchronized with browser paints
+        requestAnimationFrame(drawBoundingBoxes);
       } catch(err) {
-        console.error('Bad JSON:', e.data);
+        console.error('Bad JSON:', e.data, err);
+        latestDetections = null; // Clear old data on error
+        requestAnimationFrame(clearBoundingBoxes); // Clear boxes if JSON is bad
       }
     };
-    evt.onerror = () => {
-      console.warn('SSE connection error');
+    evt.onerror = (err) => {
+      console.warn('SSE connection error:', err);
+      latestDetections = null; // Clear data on connection error
+      requestAnimationFrame(clearBoundingBoxes); // Clear boxes
+      // Optional: Add logic to display connection error state
     };
+
+    // Redraw boxes on window resize as image scaling might change
+    window.addEventListener('resize', () => {
+        // Debounce or throttle this if resize events fire too rapidly
+        requestAnimationFrame(drawBoundingBoxes);
+    });
+
+    // Initial setup
+    refreshView(); // Set initial view
+    // Attempt an initial draw in case data arrives before image loads fully
+    // or if the image is already cached.
+    cameraFeed.onload = () => {
+        requestAnimationFrame(drawBoundingBoxes);
+    }
+    // Also handle the case where the image might already be loaded
+    if (cameraFeed.complete && cameraFeed.naturalWidth > 0) {
+         requestAnimationFrame(drawBoundingBoxes);
+    }
+
   </script>
 </body>
 </html>

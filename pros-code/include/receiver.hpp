@@ -17,7 +17,7 @@ struct Detection {
 struct Frame {
     std::string flag;
     std::vector<Detection> detections;
-    std::vector<std::tuple<double, double, double>> poses;
+    std::tuple<double, double, double> poses;
 };
 
 std::optional<Frame> fetch_frame();

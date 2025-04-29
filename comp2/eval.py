@@ -232,7 +232,8 @@ def run_eval(process_image) -> str:
               '\\n') + f'" >> {path}')
 
 if __name__ == "__main__":
-    with InferenceEngine("/home/aadish/AIWorlds/comp2/yolov5n-best.engine") as engine:
-        def process_image(i):
-            engine.run(cv2.imread(i))
-        run_eval(process_image)
+    engine = InferenceEngine("/home/aadish/AIWorlds/comp2/yolov5n-best.engine")
+    def process_image(i):
+        engine.run(i) # cv2.imread(i)
+    run_eval(process_image)
+    engine.close()
