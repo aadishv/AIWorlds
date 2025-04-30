@@ -17,7 +17,7 @@ class App:
     def __init__(self):
         print("test1")
         self.camera = CameraWorker()
-        self.inference = InferenceWorker(self)
+        self .inference = InferenceWorker(self)
         self.most_recent_result = {}
 
     def service_simulator(self):
@@ -26,7 +26,6 @@ class App:
         while True:
             try:
                 self.most_recent_result = self.post.update(5)
-                print(self.most_recent_result)
             except Exception as e:
                 print(f"Error in service_simulator: {e}")
             time.sleep(1.0 / 30.0)
