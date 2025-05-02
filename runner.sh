@@ -3,4 +3,4 @@ echo "------------------------------------------------"
 cd comp3
 sudo python3.6 main.py
 
-# python3.6 eval.py
+# cd comp3 && python3.6 test.py

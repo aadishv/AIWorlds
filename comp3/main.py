@@ -15,20 +15,16 @@ import atexit
 
 class App:
     def __init__(self):
-        print("test1")
         self.camera = CameraWorker()
-        self .inference = InferenceWorker(self)
+        self.inference = InferenceWorker(self)
         self.most_recent_result = {}
 
     def service_simulator(self):
-        print('test2')
-        self.post = Processing(self, (0, 0, 0))
+        self.post = Processing(self, (0, 0, 0), self.camera._processing.fl)
         while True:
-            try:
-                self.most_recent_result = self.post.update(5)
-            except Exception as e:
-                print(f"Error in service_simulator: {e}")
-            time.sleep(1.0 / 30.0)
+            start = time.time()
+            self.most_recent_result = self.post.update(5)
+            time.sleep(max(0, 1.0 / 30.0 - (time.time() - start)))
 
     def run_dashboard(self):
         # stop excessive logging of requests
@@ -42,9 +38,8 @@ class App:
             """Generator function to capture frames and yield them for streaming."""
             while True:
                 color_img, depth_img = self.camera.frames
-                # Convert the raw depth (float or uint16) → 0–255 uint8
                 depth_8u = cv2.normalize(
-                    depth_img, None,
+                    -depth_img, None,
                     alpha=0, beta=255,
                     norm_type=cv2.NORM_MINMAX,
                     dtype=cv2.CV_8U
@@ -105,7 +100,7 @@ class App:
         app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
 
     def close(self):
-        self.camera.close()
+        self.camera.stop()
 
     def __enter__(self):
         return self
@@ -118,13 +113,17 @@ if __name__ == "__main__":
     with App() as app:
         try:
             threads = []
-            t1 = threading.Thread(target=app.camera.worker, daemon=True)
+            t1 = threading.Thread(target=app.camera.worker,
+                                  name="camera_worker", daemon=True)
             threads.append(t1)
-            t2 = threading.Thread(target=app.inference.worker, daemon=True)
+            t2 = threading.Thread(
+                target=app.inference.worker, name="inference_worker", daemon=True)
             threads.append(t2)
-            t3 = threading.Thread(target=app.service_simulator, daemon=True)
+            t3 = threading.Thread(
+                target=app.service_simulator, name="service_simulator", daemon=True)
             threads.append(t3)
-            t4 = threading.Thread(target=app.run_dashboard, daemon=True)
+            t4 = threading.Thread(target=app.run_dashboard,
+                                  name="dashboard_worker", daemon=True)
             threads.append(t4)
             # all of the crazy lifecycle management stuff
             shutdown = threading.Event()
@@ -147,4 +146,3 @@ if __name__ == "__main__":
                 t.join(timeout=1)
         finally:
             app.close()
-print("TESTTT")

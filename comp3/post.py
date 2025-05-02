@@ -4,28 +4,57 @@ import copy
 from constants import MEASUREMENT_ROW
 import random
 from poseconv import locate_detection
-
+from test import OliverLocalization
 # def locate_detection(robot_x, robot_y, robot_theta_deg, detection):
+import json
 
 class Localization:
     def __init__(self, initial_pose):
-        self.pose = initial_pose  # (x, y, θ)
+        self.pose = (0, 0, np.pi / 2)  # initial_pose  # (x, y, θ)
+        self.t = 0
 
     def update(self, measurement, imu):
-        # add 0.01 to each part
-        ny = self.pose[1] + 1
-        self.pose = (
-            self.pose[0],
-            -3 * 24 if ny > 3 * 24 else ny,
-            self.pose[2],
-        )
+        # Radius of the circle
+        radius = 48
+
+        # Calculate angular velocity to complete a circle in 300 steps
+        angular_velocity = 2 * np.pi / 300
+
+        # Update the angle
+        theta = (self.t % 300 * angular_velocity)
+
+        # Calculate new x and y coordinates
+        x = radius * np.cos(theta)
+        y = radius * np.sin(theta)
+
+        # Update the pose
+        self.pose = (x, y, theta)
+        self.t += 1
+
+
+'''
+example:
+```py
+localization = OliverLocalization(10, (0, 60, 0))
+
+localization.update(depths, theta)
+print(localization.pose)
+```
+'''
+
+
+class FakeDetection:  # use w/ duck-typing
+    def __init__(self):
+        self.pose = (0, 0, 0)
+
 
 class Processing:
-    def __init__(self, app, pose):  # pose = (x, y, theta)
+    def __init__(self, app, pose, focal_length):  # pose = (x, y, theta)
         self.app = app
-        self.localization = Localization(pose)
+        self.localization = FakeDetection()
         self.detections = []
         self.depth_scale = app.camera._camera.depth_scale
+        self.fl = focal_length
 
     def get_depth(self, detection, depth_img):
         try:
@@ -36,9 +65,8 @@ class Processing:
             left = max(detection["x"] - width / 2, 0)
             right = min(detection["x"] + width / 2, depth_img.shape[1])
             depth_img = depth_img[int(top):int(
-                bottom), int(left):int(right)].astype(float).flatten()
-            p = np.percentile(depth_img[depth_img > 0], 10) * self.depth_scale
-            return p
+                bottom), int(left):int(right)].astype(float).flatten()  # * self.depth_scale
+            return np.percentile(depth_img[depth_img > 0], 10)
         except Exception:
             return -1
 
@@ -72,6 +100,33 @@ class Processing:
 
         return info
 
+    def convert_to_v5(self, data):
+        result = copy.deepcopy(data)
+        # Create a new object from scratch instead of modifying the existing one
+        new_result = {
+            'pose': {
+                'x': result['pose']['x'],
+                'y': result['pose']['y'],
+                'theta': -result['pose']['theta']
+            },
+            'stuff': [],
+            'flag': result['flag']
+        }
+
+        # Copy and transform each detection
+        for det in result['stuff']:
+            new_det = {
+                'x': det['fx'],
+                'y': det['fy'],
+                'z': det['fz'],
+                'class': det['class']
+            }
+            new_result['stuff'].append(new_det)
+
+        result = json.dumps(new_result, separators=(",", ":"))
+        print(result)
+        return result
+
     def update(self, theta):  # update with new theta
         depth_image = self.app.camera.frames[1]
         # process detections
@@ -88,16 +143,17 @@ class Processing:
             result = locate_detection(*self.localization.pose, det)
             det['fx'], det['fy'], det['fz'] = result['x'], result['y'], result['z']
         # run localization
-        measurement = self.app.camera.frames[1][MEASUREMENT_ROW]
-        self.localization.update(measurement, theta)
-
+        measurement = self.app.camera.frames[1][MEASUREMENT_ROW] * 3.28 * 12
+        if isinstance(self.localization, FakeDetection):
+            self.localization = OliverLocalization(
+                self.fl, (-(72-np.percentile(measurement, 50)), 0, 90))
+        self.localization.update(measurement, 90)
         # collision detection
         flag = ""
         if measurement[measurement > 0].size > 0:
             percentile = np.percentile(
-                measurement[measurement > 0], 10) * self.depth_scale
-            if percentile * 3.28 < 1:
-                print("collision!!!!")
+                measurement[measurement > 0], 10)
+            if percentile < 12:
                 flag = "STOP"
 
         # build output
@@ -111,4 +167,5 @@ class Processing:
             'flag': flag,
             'jetson': self.get_jetson_info()
         }
+        _ = self.convert_to_v5(output)
         return output
