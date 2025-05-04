@@ -1,45 +1,38 @@
 #include "main.h"
-#include "pros/apix.h" // Include LVGL access
 #include "receiver.hpp"
+#include "serial.hpp"
 #include <cstdio>
 using namespace std;
 
-// Forward declaration for the visualizer task
-void visualizer_task();
-
-namespace serial {
-    using namespace serial;
-    // Make most_recent_frame accessible (it already is globally in the namespace)
-    optional<Frame> most_recent_frame = nullopt;
-
-    void start() {
-        pros::c::serctl(SERCTL_DISABLE_COBS, NULL);
-        // TODO: get the actual starting position from the auton selector or smth
-        double ix = 1.0;
-        double iy = 2.0;
-        double theta = 180.0;
-
-        printf("{\"x\": %f,\"y\": %f, \"theta\": %f}\r\n", ix, iy, theta);
-        fflush(stdout);
-    }
-
-    void task() {
-        while (true) {
-            // TODO: get the actual imu reading from the imu
-            double imu_reading = 5.5;
-            printf("{\"imu\": %f}\r\n", imu_reading);
-            fflush(stdout);
-
-            most_recent_frame = fetch_frame();
-
-            pros::delay(20);
+// LVGL visualization task
+void visualizer_task_fn(void*) {
+    // Create a label to display detection count
+    lv_obj_t* label = lv_label_create(lv_scr_act());
+    lv_label_set_text(label, "Detections: 0");
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    
+    // Set font size (larger text)
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    
+    while (true) {
+        // Update display with number of detections
+        if (serial::most_recent_frame) {
+            int detection_count = serial::most_recent_frame->detections.size();
+            char buffer[50];
+            snprintf(buffer, sizeof(buffer), "Detections: %d", detection_count);
+            lv_label_set_text(label, buffer);
+        } else {
+            lv_label_set_text(label, "Detections: 0");
         }
+        
+        // Refresh every 100ms
+        pros::delay(100);
     }
-
-} // namespace serial
+}
 
 void initialize() {
-    // IMPORTANT: Remove or comment out LLEMU initialization if present
+    // Initialize LVGL
+    pros::lcd::initialize();
 }
 
 void disabled() {}
@@ -47,7 +40,17 @@ void competition_initialize() {}
 void autonomous() {}
 
 void opcontrol() {
+    // Start serial communication
     serial::start();
+    
+    // Create serial task
     pros::Task serial_task(serial::task);
-
+    
+    // Create visualizer task
+    pros::Task visualizer_task(visualizer_task_fn);
+    
+    // Keep the program running
+    while (true) {
+        pros::delay(20);
+    }
 }
