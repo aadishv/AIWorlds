@@ -10,7 +10,7 @@ import torchvision as vision
 from constants import ENGINE_PATH
 
 class InferenceEngine:
-    TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+    TRT_LOGGER = trt.Logger(trt.Logger.ERROR)
 
     def __init__(
         self,
@@ -217,6 +217,7 @@ class InferenceWorker:
         self.engine = InferenceEngine(ENGINE_PATH)
         # self.camera.frames[0] is the most up-to-date rgb image
     def worker(self):
+        print("inference worker")
         self.engine.cuda_ctx.push()
         try:
             while True:

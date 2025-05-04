@@ -8,15 +8,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "==> Killing processes accessing /dev/video1"
 # gather PIDs (if any)
 video_pids=$(lsof -t /dev/video1 2>/dev/null || true)
 if [[ -n "$video_pids" ]]; then
   echo "Found PIDs: $video_pids"
   echo "$video_pids" | xargs sudo kill -9
   echo "Done."
-else
-  echo "No processes accessing /dev/video2 found."
 fi
 
 echo
@@ -27,6 +24,4 @@ if [[ -n "$py_pids" ]]; then
   echo "Found python3.6 PIDs: $py_pids"
   echo "$py_pids" | xargs sudo kill -9
   echo "Done."
-else
-  echo "No python3.6 processes found."
 fi

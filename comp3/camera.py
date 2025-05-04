@@ -43,12 +43,12 @@ class Processing:
         self.depth_scale = depth_scale
 
         # grab the two streams' intrinsics & extrinsics
-        ds   = profile.get_stream(rs.stream.depth).as_video_stream_profile()
-        cs   = profile.get_stream(rs.stream.color).as_video_stream_profile()
-        din  = ds.get_intrinsics()      # depth camera intrinsics
-        cin  = cs.get_intrinsics()      # color camera intrinsics
+        ds = profile.get_stream(rs.stream.depth).as_video_stream_profile()
+        cs = profile.get_stream(rs.stream.color).as_video_stream_profile()
+        din = ds.get_intrinsics()      # depth camera intrinsics
+        cin = cs.get_intrinsics()      # color camera intrinsics
         self.fl = cin.fx
-        ext  = ds.get_extrinsics_to(cs) # depth → color
+        ext = ds.get_extrinsics_to(cs)  # depth → color
 
         w, h = cin.width, cin.height
 
@@ -61,9 +61,12 @@ class Processing:
                 # back‑project this color‑pixel at unit depth into 3D color coords
                 pt_c = rs.rs2_deproject_pixel_to_point(cin, [u, v], 1.0)
                 # transform into depth camera coords
-                Xd = ext.rotation[0]*pt_c[0] + ext.rotation[1]*pt_c[1] + ext.rotation[2]*pt_c[2] + ext.translation[0]
-                Yd = ext.rotation[3]*pt_c[0] + ext.rotation[4]*pt_c[1] + ext.rotation[5]*pt_c[2] + ext.translation[1]
-                Zd = ext.rotation[6]*pt_c[0] + ext.rotation[7]*pt_c[1] + ext.rotation[8]*pt_c[2] + ext.translation[2]
+                Xd = ext.rotation[0]*pt_c[0] + ext.rotation[1] * \
+                    pt_c[1] + ext.rotation[2]*pt_c[2] + ext.translation[0]
+                Yd = ext.rotation[3]*pt_c[0] + ext.rotation[4] * \
+                    pt_c[1] + ext.rotation[5]*pt_c[2] + ext.translation[1]
+                Zd = ext.rotation[6]*pt_c[0] + ext.rotation[7] * \
+                    pt_c[1] + ext.rotation[8]*pt_c[2] + ext.translation[2]
                 # project back to depth image pixel
                 px = rs.rs2_project_point_to_pixel(din, [Xd, Yd, Zd])
                 map_x[v, u] = px[0]
@@ -73,9 +76,9 @@ class Processing:
         self.map_y = map_y
 
         # your HSV gains
-        self.HUE        = 1.2
+        self.HUE = 1.2
         self.SATURATION = 1.2
-        self.VALUE      = 0.8
+        self.VALUE = 0.8
 
     def process_image(self, image):
         """Apply the same HSV‐based tweak as before."""
@@ -94,7 +97,7 @@ class Processing:
 
         # raw arrays
         depth_raw = np.asanyarray(dframe.get_data()).astype(np.float32)
-        color     = np.asanyarray(cframe.get_data())
+        color = np.asanyarray(cframe.get_data())
 
         # convert to meters and apply your 3% feed‑forward
         depth_m = depth_raw * self.depth_scale / 1.03
@@ -137,8 +140,6 @@ class CameraWorker:
                 self.frames = self._processing.process_frames(frames)
         finally:
             self._camera.stop()
-    # snippet for getting color map from image:
-    # depth_map = cv2.applyColorMap(depthImage, cv2.COLORMAP_JET)
 
     def close(self):
         self._camera.stop()

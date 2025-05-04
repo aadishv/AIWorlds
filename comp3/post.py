@@ -1,46 +1,9 @@
 import numpy as np
-import os
 import copy
 from constants import MEASUREMENT_ROW
-import random
 from poseconv import locate_detection
-from test import OliverLocalization
-# def locate_detection(robot_x, robot_y, robot_theta_deg, detection):
+from localization import OliverLocalization
 import json
-
-class Localization:
-    def __init__(self, initial_pose):
-        self.pose = (0, 0, np.pi / 2)  # initial_pose  # (x, y, θ)
-        self.t = 0
-
-    def update(self, measurement, imu):
-        # Radius of the circle
-        radius = 48
-
-        # Calculate angular velocity to complete a circle in 300 steps
-        angular_velocity = 2 * np.pi / 300
-
-        # Update the angle
-        theta = (self.t % 300 * angular_velocity)
-
-        # Calculate new x and y coordinates
-        x = radius * np.cos(theta)
-        y = radius * np.sin(theta)
-
-        # Update the pose
-        self.pose = (x, y, theta)
-        self.t += 1
-
-
-'''
-example:
-```py
-localization = OliverLocalization(10, (0, 60, 0))
-
-localization.update(depths, theta)
-print(localization.pose)
-```
-'''
 
 
 class FakeDetection:  # use w/ duck-typing
@@ -55,6 +18,7 @@ class Processing:
         self.detections = []
         self.depth_scale = app.camera._camera.depth_scale
         self.fl = focal_length
+        self.t = 0
 
     def get_depth(self, detection, depth_img):
         try:
@@ -124,10 +88,10 @@ class Processing:
             new_result['stuff'].append(new_det)
 
         result = json.dumps(new_result, separators=(",", ":"))
-        print(result)
         return result
 
-    def update(self, theta):  # update with new theta
+    def update(self, pose):  # update with new theta
+        self.t += 1
         depth_image = self.app.camera.frames[1]
         # process detections
         detections = copy.deepcopy(self.app.inference.raw_detections)
@@ -140,14 +104,20 @@ class Processing:
             if i['class'] not in ['red', 'blue'] or i['confidence'] > 0.6
         ]
         for det in self.detections:
-            result = locate_detection(*self.localization.pose, det)
-            det['fx'], det['fy'], det['fz'] = result['x'], result['y'], result['z']
+                # Correctly extract pose components and convert theta to radians
+                x, y, theta_deg = self.localization.pose
+                theta_rad = np.deg2rad(theta_deg)
+                
+                # Pass individual arguments to locate_detection
+                result = locate_detection(x, y, theta_rad, det)
+                det['fx'], det['fy'], det['fz'] = result['x'], result['y'], result['z']
         # run localization
         measurement = self.app.camera.frames[1][MEASUREMENT_ROW] * 3.28 * 12
-        if isinstance(self.localization, FakeDetection):
-            self.localization = OliverLocalization(
-                self.fl, (-(72-np.percentile(measurement, 50)), 0, 90))
-        self.localization.update(measurement, 90)
+        self.localization.pose = pose
+        # if isinstance(self.localization, FakeDetection):
+        #     self.localization = OliverLocalization(
+        #         self.fl, (0, 0, self.t))
+        # self.localization.update(np.reshape(self.app.camera.frames[1][MEASUREMENT_ROW], (1, 640)) * 3.28 * 12, self.t)
         # collision detection
         flag = ""
         if measurement[measurement > 0].size > 0:
