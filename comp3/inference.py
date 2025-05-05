@@ -9,6 +9,7 @@ import torchvision as vision
 
 from constants import ENGINE_PATH
 
+
 class InferenceEngine:
     TRT_LOGGER = trt.Logger(trt.Logger.ERROR)
 
@@ -20,6 +21,7 @@ class InferenceEngine:
             "iou_thres": 0.5,
             "max_det": 50,
             "classes": ["blue", "goal", "red", "bot"],
+            # "classes": ["blue", "goal", "red", "stake?", "robot"]
         },
         input_shape=(1, 3, 640, 640),
         output_shape=(1, 25200, 9),
@@ -210,12 +212,14 @@ class InferenceEngine:
             return []
         return self._do_nms(out3d) or []
 
+
 class InferenceWorker:
     def __init__(self, app):
         self.camera = app.camera
         self.raw_detections = []
         self.engine = InferenceEngine(ENGINE_PATH)
         # self.camera.frames[0] is the most up-to-date rgb image
+
     def worker(self):
         print("inference worker")
         self.engine.cuda_ctx.push()
