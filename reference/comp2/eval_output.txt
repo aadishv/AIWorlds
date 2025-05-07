@@ -51,3 +51,9 @@ Total time taken: 190.80 seconds for 207 images
 Average time per image: 0.92 seconds
 Images per second: 1.08
 
+
+Eval on 2025-05-07 00:03:59.857635
+Total time taken: 104.56 seconds for 207 images
+Average time per image: 0.51 seconds
+Images per second: 1.98
+

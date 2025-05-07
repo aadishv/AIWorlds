@@ -1,4 +1,5 @@
 lines = open('../config.txt').read().splitlines()
+print("Using model {}".format(lines[2]))
 ENGINE_PATH = f"../models/{lines[2]}"
 MEASUREMENT_ROW = 240  # center row of image (image is 640w, 480h)
 

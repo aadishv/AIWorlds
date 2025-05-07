@@ -5,6 +5,7 @@ import cv2
 
 from inference import InferenceEngine
 
+
 def run_eval(process_image) -> str:
     IMAGES = [
         "DSC05527_JPG.rf.1dc38151cc9cb5b70ebc3f3c8f2c9061.jpg",
@@ -219,7 +220,8 @@ def run_eval(process_image) -> str:
     start = time.time()
     for i in range(len(IMAGES)):
         print(f"Processing image {i+1}/{len(IMAGES)}")
-        process_image(f'/home/aadish/AIWorlds/eval/eval_images/{IMAGES[i]}')
+        process_image(
+            f'/home/aadish/AIWorlds/reference/eval/eval_images/{IMAGES[i]}')
     start = time.time() - start
     output_text = f"\nEval on {datetime.datetime.now()}\n"
     output_text += f"Total time taken: {start:.2f} seconds for {len(IMAGES)} images\n"
@@ -231,9 +233,12 @@ def run_eval(process_image) -> str:
     os.system('echo "' + output_text.replace('\n',
               '\\n') + f'" >> {path}')
 
+
 if __name__ == "__main__":
-    engine = InferenceEngine("/home/aadish/AIWorlds/comp2/yolov5n-best.engine")
+    engine = InferenceEngine(
+        "/home/aadish/AIWorlds/models/endgame-1000t/best.engine")
+
     def process_image(i):
-        engine.run(i) # cv2.imread(i)
+        engine.run(i)  # cv2.imread(i)
     run_eval(process_image)
     engine.close()
