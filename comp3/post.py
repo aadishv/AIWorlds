@@ -101,13 +101,13 @@ class Processing:
             detection['depth'] = -1 if np.isnan(depth_value) else depth_value
         self.detections = [
             i for i in detections
-            if i['class'] not in ['red', 'blue'] or i['confidence'] > 0.6
+            if i['class'] not in ['red', 'blue'] or i['confidence'] > 0.7
         ]
         for det in self.detections:
                 # Correctly extract pose components and convert theta to radians
                 x, y, theta_deg = self.localization.pose
                 theta_rad = np.deg2rad(theta_deg)
-                
+
                 # Pass individual arguments to locate_detection
                 result = locate_detection(x, y, theta_rad, det)
                 det['fx'], det['fy'], det['fz'] = result['x'], result['y'], result['z']

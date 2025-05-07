@@ -16,7 +16,7 @@ except ImportError:
     exit(1)
 
 # --- Configuration ---
-OUTPUT_DIR = '../data/ours_annot_517'
+OUTPUT_DIR = '../data/ours_annot_endgame'
 # Ensure the output directory exists relative to the script's assumed location
 script_dir = os.path.dirname(os.path.abspath(__file__))
 output_dir_abs = os.path.abspath(os.path.join(script_dir, OUTPUT_DIR))

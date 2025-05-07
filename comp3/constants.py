@@ -1,4 +1,5 @@
-ENGINE_PATH = "/home/aadish/AIWorlds/comp3/yolov5n-best-900t.engine"
+lines = open('../config.txt').read().splitlines()
+ENGINE_PATH = f"../models/{lines[2]}"
 MEASUREMENT_ROW = 240  # center row of image (image is 640w, 480h)
 
 MOGO_TEST_FILES = ['../data/ours/feed2_640x480_311.jpeg', '../data/ours/feed2_640x480_295.jpeg', '../data/ours/feed2_640x480_289.jpeg',

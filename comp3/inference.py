@@ -17,11 +17,11 @@ class InferenceEngine:
         self,
         engine_path: str,
         nms_params={
-            "conf_thres": 0.20,
+            "conf_thres": 0.40,
             "iou_thres": 0.5,
             "max_det": 50,
-            "classes": ["blue", "goal", "red", "bot"],
-            # "classes": ["blue", "goal", "red", "stake?", "robot"]
+            "classes": ["blue", "bot", "goal", "red"],
+            # "classes": ["blue", "goal", "red", "stake?", "robot"],
         },
         input_shape=(1, 3, 640, 640),
         output_shape=(1, 25200, 9),
@@ -221,7 +221,6 @@ class InferenceWorker:
         # self.camera.frames[0] is the most up-to-date rgb image
 
     def worker(self):
-        print("inference worker")
         self.engine.cuda_ctx.push()
         try:
             while True:

@@ -33,7 +33,7 @@ def locate_detection(
 
     Xc = d * (px - CX_PX) / FOCAL_PX
     Yc = d
-    Zc = d * (CY_PX - py) / FOCAL_PX
+    Zc = d * (py) / FOCAL_PX # CY_PX - py instead of (py)
 
     # 2) rotate by yaw about Z into world axes (still in meters)
     c, s = np.cos(robot_theta_rad), np.sin(robot_theta_rad)
