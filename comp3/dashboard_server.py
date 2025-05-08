@@ -36,31 +36,7 @@ def gstreamer_pipeline(
         )
     )
 
-class CameraStream:
-    def __init__(self, pipeline):
-        self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
-        self.latest_frame = None
-        self.running = True
-        self.lock = threading.Lock()
-        self.thread = threading.Thread(target=self.update, daemon=True)
-        self.thread.start()
 
-    def update(self):
-        while self.running:
-            ret, frame = self.cap.read()
-            if ret:
-                with self.lock:
-                    self.latest_frame = frame
-            time.sleep(0.001)
-
-    def get_frame(self):
-        with self.lock:
-            return self.latest_frame.copy() if self.latest_frame is not None else None
-
-    def release(self):
-        self.running = False
-        self.thread.join()
-        self.cap.release()
 
 class DashboardServer:
     def __init__(self, app_instance):
@@ -68,12 +44,6 @@ class DashboardServer:
         self.flask_app = Flask("3151App")
         CORS(self.flask_app, resources={r"/*": {"origins": "*"}})
         self._setup_routes()
-        self.color2_stream = CameraStream(gstreamer_pipeline(framerate=10))
-        import atexit
-        atexit.register(self.cleanup)
-
-    def cleanup(self):
-        self.color2_stream.release()
 
     def _setup_routes(self):
         app = self.flask_app
@@ -134,7 +104,16 @@ class DashboardServer:
                 min_interval = 1.0 / 10
                 while True:
                     start_time = time.time()
-                    frame = self.color2_stream.get_frame()
+                    frame = None
+                    # Thread-safe access to frames[2]
+                    camera = app_instance.camera
+                    if hasattr(camera, "_frames_lock"):
+                        with camera._frames_lock:
+                            if len(camera.frames) > 2:
+                                frame = camera.frames[2]
+                    else:
+                        if len(camera.frames) > 2:
+                            frame = camera.frames[2]
                     if frame is not None:
                         ret, jpeg = cv2.imencode('.jpg', frame)
                         if ret:
