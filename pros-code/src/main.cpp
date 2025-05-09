@@ -1,6 +1,6 @@
 #include "main.h"
-#include "receiver.hpp"
-#include "serial.hpp"
+#include "jetson.hpp"
+
 #include <cstdio>
 using namespace std;
 
@@ -10,10 +10,10 @@ void visualizer_task_fn(void*) {
     lv_obj_t* label = lv_label_create(lv_scr_act());
     lv_label_set_text(label, "Detections: 0");
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
-    
+
     // Set font size (larger text)
     lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    
+
     while (true) {
         // Update display with number of detections
         if (serial::most_recent_frame) {
@@ -24,7 +24,7 @@ void visualizer_task_fn(void*) {
         } else {
             lv_label_set_text(label, "Detections: 0");
         }
-        
+
         // Refresh every 100ms
         pros::delay(100);
     }
@@ -40,15 +40,14 @@ void competition_initialize() {}
 void autonomous() {}
 
 void opcontrol() {
-    // Start serial communication
-    serial::start();
-    
+
     // Create serial task
-    pros::Task serial_task(serial::task);
-    
+    pros::Task serial_task_send(serial::task_send);
+    pros::Task serial_task_receive(serial::task_receive);
+
     // Create visualizer task
     pros::Task visualizer_task(visualizer_task_fn);
-    
+
     // Keep the program running
     while (true) {
         pros::delay(20);
