@@ -9,7 +9,6 @@
 
 using json = nlohmann::json;
 using namespace std;
-using namespace serial;
 
 namespace serial {
     // Make most_recent_frame accessible globally
