@@ -166,7 +166,7 @@ class Processing:
         detections = copy.deepcopy(self.app.inference.raw_detections)
         for detection in detections:
             detection['y'] *= 480 / 640
-            if 'endgame-1000t' in ENGINE_PATH:  # a little trick
+            if '0622' in ENGINE_PATH:  # a little trick
                 if detection['class'] == 'goal':
                     detection['height'] *= 0.8
                     detection['width'] *= 0.8

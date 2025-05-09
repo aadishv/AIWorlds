@@ -1,3 +1,3 @@
-bash runner2.sh
+bash runner2.sh kill
 cd comp3
-sudo python3.6 main.py sim
+sudo python3.6 main.py ser
