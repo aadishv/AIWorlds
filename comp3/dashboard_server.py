@@ -51,7 +51,7 @@ class DashboardServer:
 
         def generate_frames(type):
             while True:
-                color_img, depth_img = app_instance.camera.frames
+                color_img, depth_img, _ = app_instance.camera.frames
 
                 if color_img is None or depth_img is None:
                     print(
