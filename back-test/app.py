@@ -1,7 +1,17 @@
+from flask import Flask, Response, send_from_directory
+from flask_cors import CORS, cross_origin
 import cv2
-from flask import Flask, Response, render_template_string
+import os
 
 app = Flask(__name__)
+CORS(app, resources={r"/video_feed": {"origins": "*"}})
+
+# Serve the standalone HTML file
+
+
+@app.route('/')
+def index():
+    return send_from_directory(os.path.join(app.root_path, 'templates'), 'index.html')
 
 
 def gstreamer_pipeline(
@@ -48,15 +58,18 @@ def gen_frames():
     cap.release()
 
 
-@app.route('/')
-def index():
-    return open('templates/index.html').read()
-
-
 @app.route('/video_feed')
+@cross_origin(origins="*")
 def video_feed():
     return Response(gen_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+# Serve app.js from root for browser access
+
+
+@app.route('/app.js')
+def serve_app_js():
+    return send_from_directory(app.root_path, 'app.js')
 
 
 if __name__ == '__main__':

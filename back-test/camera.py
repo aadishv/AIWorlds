@@ -1,8 +1,4 @@
 import cv2
-from flask import Flask, Response, render_template_string
-
-app = Flask(__name__)
-
 
 def gstreamer_pipeline(
     capture_width=640,
@@ -30,7 +26,6 @@ def gstreamer_pipeline(
         )
     )
 
-
 def gen_frames():
     cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
     if not cap.isOpened():
@@ -46,18 +41,3 @@ def gen_frames():
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
     cap.release()
-
-
-@app.route('/')
-def index():
-    return open('templates/index.html').read()
-
-
-@app.route('/video_feed')
-def video_feed():
-    return Response(gen_frames(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, threaded=True)
