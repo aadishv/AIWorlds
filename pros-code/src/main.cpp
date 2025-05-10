@@ -3,10 +3,26 @@
 
 #include <cstdio>
 using namespace std;
+void initialize() {
+    // Initialize LVGL
+    pros::lcd::initialize();
+}
 
-// LVGL visualization task
-void visualizer_task_fn(void*) {
-    // Create a label to display detection count
+void disabled() {}
+void competition_initialize() {}
+void autonomous() {}
+
+void opcontrol() {
+
+    // Create serial task
+    pros::Task serial_task_send(serial::task_send);
+    pros::Task serial_task_receive(serial::task_receive);
+
+    // Create visualizer task
+    pros::Task visualizer_task(visualizer_task_fn);
+
+    // LVGL visualization
+     // Create a label to display detection count
     lv_obj_t* label = lv_label_create(lv_scr_act());
     lv_label_set_text(label, "Detections: 0");
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
@@ -27,29 +43,5 @@ void visualizer_task_fn(void*) {
 
         // Refresh every 100ms
         pros::delay(100);
-    }
-}
-
-void initialize() {
-    // Initialize LVGL
-    pros::lcd::initialize();
-}
-
-void disabled() {}
-void competition_initialize() {}
-void autonomous() {}
-
-void opcontrol() {
-
-    // Create serial task
-    pros::Task serial_task_send(serial::task_send);
-    pros::Task serial_task_receive(serial::task_receive);
-
-    // Create visualizer task
-    pros::Task visualizer_task(visualizer_task_fn);
-
-    // Keep the program running
-    while (true) {
-        pros::delay(20);
     }
 }
