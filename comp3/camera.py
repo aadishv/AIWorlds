@@ -25,8 +25,6 @@ import cv2
 import numpy as np
 import json
 import os  # Import os to check file existence
-import threading
-import time
 
 
 # --- Existing Camera and Processing Classes (unchanged) ---

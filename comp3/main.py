@@ -32,6 +32,8 @@ class App:
         first = True
         while True:
             try:
+                if not ser:
+                    ser = serial.Serial(port, baud, timeout=None)
                 line = ser.readline().decode("utf-8", "replace").strip()
                 line = "".join(c for c in line if ord(c) < 128 and ord(c) > 0)
                 try:
@@ -60,6 +62,7 @@ class App:
                 time.sleep(1.0 / 30.0)
             except serial.SerialException as e:
                 print("Encountered error in serial loop:", e)
+                del ser
                 time.sleep(1.0)
 
     def close(self):
