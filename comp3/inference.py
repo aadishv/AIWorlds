@@ -76,7 +76,7 @@ class InferenceEngine:
     def _do_preprocessing(self, img):
         if img is None:
             # Return a black image of the correct size if input is None
-            return np.zeros(self.input_shape[1:], dtype=np.float32).transpose((2,0,1))
+            return np.zeros(self.input_shape[1:], dtype=np.float32).transpose((2, 0, 1))
         img = cv2.resize(img, (self.input_shape[3], self.input_shape[2]))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = img.astype(np.float32) / 255.0
@@ -85,7 +85,7 @@ class InferenceEngine:
 
         # Copy to host buffer
         np.copyto(self.inputs[0]["host"], img.ravel())
-        return img # Return preprocessed image for batched inference
+        return img  # Return preprocessed image for batched inference
 
     def _do_inference(self):
         for inp in self.inputs:
@@ -263,7 +263,8 @@ class BatchedInferenceEngine:
         inputs, outputs, bindings = [], [], []
         stream = cuda.Stream()
         for binding in engine:
-            size = trt.volume(engine.get_binding_shape(binding)) * engine.max_batch_size
+            size = trt.volume(engine.get_binding_shape(
+                binding)) * engine.max_batch_size
             dtype = trt.nptype(engine.get_binding_dtype(binding))
 
             host_mem = cuda.pagelocked_empty(size, dtype)
@@ -406,13 +407,12 @@ class BatchedInferenceEngine:
 class InferenceWorker:
     def __init__(self, app):
         self.camera = app.camera
-        self.raw_detections = [] # For RealSense camera
-        self.raw_detections_2 = [] # For Jetson CSI camera
-        # Make sure to use correct input/output shapes for batch=2, 640x640
-        self.engine = BatchedInferenceEngine(
+        self.raw_detections = []  # For RealSense camera
+        # Only use single-image inference now
+        self.engine = InferenceEngine(
             ENGINE_PATH,
-            input_shape=(2, 3, 640, 640),
-            output_shape=(2, 25200, 9)
+            input_shape=(1, 3, 640, 640),
+            output_shape=(1, 25200, 9)
         )
         # self.camera.frames is (realsense_color, realsense_depth, jetson_csi_color)
 
@@ -420,35 +420,17 @@ class InferenceWorker:
         self.engine.cuda_ctx.push()
         try:
             while True:
-                realsense_img = None
-                jetson_csi_img = None
+                realsense_img = self.camera.frames[0]
 
-                with self.camera._frames_lock: # Assuming CameraWorker has _frames_lock
-                    if len(self.camera.frames) > 0:
-                        realsense_img = self.camera.frames[0]
-                    if len(self.camera.frames) > 2:
-                        jetson_csi_img = self.camera.frames[2]
-                
-                # If jetson_csi_img is None, pass a black image or handle appropriately
-                if jetson_csi_img is None:
-                    # Create a black image of expected size if jetson_csi_img is not available
-                    # This helps prevent errors if the CSI camera isn't ready yet
-                    # Adjust shape as per your CSI camera's output if different from RealSense
-                    if realsense_img is not None:
-                         jetson_csi_img = np.zeros_like(realsense_img)
-                    else: # if both are None, we can't do much, so skip or send two black images
-                         jetson_csi_img = np.zeros((self.engine.input_shape[2], self.engine.input_shape[3], 3), dtype=np.uint8)
+                if realsense_img is None:  # If realsense is None, make it black
+                    print("HELPPPP")
+                    realsense_img = np.zeros(
+                        (self.engine.input_shape[2], self.engine.input_shape[3], 3), dtype=np.uint8)
 
+                detections = self.engine.run(realsense_img)
+                self.raw_detections = detections
 
-                if realsense_img is None: # If realsense is also None, make it black
-                    realsense_img = np.zeros((self.engine.input_shape[2], self.engine.input_shape[3], 3), dtype=np.uint8)
-
-
-                detections1, detections2 = self.engine.run_batch(realsense_img, jetson_csi_img)
-                self.raw_detections = detections1
-                self.raw_detections_2 = detections2
-                
-                time.sleep(0.01) # Adjust sleep time as needed
+                time.sleep(0.01)  # Adjust sleep time as needed
         finally:
             # pop when you exit, so you don’t leak
             self.engine.cuda_ctx.pop()

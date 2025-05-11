@@ -2,7 +2,6 @@ import os
 import time
 import datetime
 import cv2
-import numpy as np
 
 # Assuming this script is run from the AIWorlds/comp3 directory
 # Adjust paths if necessary

@@ -4,15 +4,10 @@ from post import Processing
 import threading
 import time
 import signal
-import logging
-from flask import Response
-import numpy as np
-import cv2
 import json
 import atexit
 import serial
 import sys
-import os
 from dashboard_server import DashboardServer
 
 
@@ -29,9 +24,6 @@ class App:
             self.most_recent_result = self.post.update((0, 0, 10))
             time.sleep(max(0, 1.0 / 30.0 - (time.time() - start)))
 
-    def run_dashboard(self):
-        raise NotImplementedError("run_dashboard has been moved to DashboardServer. Use DashboardServer(self).run() instead.")
-
     def service_serial(self):
         port = "/dev/ttyACM1"
         baud = 115200
@@ -39,32 +31,36 @@ class App:
         post = None
         first = True
         while True:
-            line = ser.readline().decode("utf-8", "replace").strip()
-            line = "".join(c for c in line if ord(c) < 128 and ord(c) > 0)
             try:
-                data = json.loads(line)
-            except Exception as e:
-                print("error with", line, e)
-                continue
+                line = ser.readline().decode("utf-8", "replace").strip()
+                line = "".join(c for c in line if ord(c) < 128 and ord(c) > 0)
+                try:
+                    data = json.loads(line)
+                except Exception as e:
+                    print("error with", line, e)
+                    continue
 
-            if first:
-                print(data)
-                post = Processing(
-                    self, (data['x'], data['y'], data['theta']), self.camera._processing.fl)
-                first = False
-                # Optionally respond with an “ack” or immediately run an update
-                continue
+                if first:
+                    print(data)
+                    post = Processing(
+                        self, (data['x'], data['y'], data['theta']), self.camera._processing.fl)
+                    first = False
+                    # Optionally respond with an “ack” or immediately run an update
+                    continue
 
-            # Subsequent messages contain only theta (or {"theta":…})
-            x = data.get("x", 0)
-            y = data.get("y", 0)
-            theta = data.get("theta", 0)
-            # returns the full {pose,stuff,flag,jetson}
-            self.most_recent_result = post.update((x, y, theta))
-            print(self.most_recent_result)
-            v5_json = post.convert_to_v5(self.most_recent_result)
-            ser.write((v5_json + "\n").encode("utf-8"))
-            time.sleep(1.0 / 30.0)
+                # Subsequent messages contain only theta (or {"theta":…})
+                x = data.get("x", 0)
+                y = data.get("y", 0)
+                theta = data.get("theta", 0)
+                # returns the full {pose,stuff,flag,jetson}
+                self.most_recent_result = post.update((x, y, theta))
+                print(self.most_recent_result)
+                v5_json = post.convert_to_v5(self.most_recent_result)
+                ser.write((v5_json + "\n").encode("utf-8"))
+                time.sleep(1.0 / 30.0)
+            except serial.SerialException as e:
+                print("Encountered error in serial loop:", e)
+                time.sleep(1.0)
 
     def close(self):
         self.camera.stop()

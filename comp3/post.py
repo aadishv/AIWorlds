@@ -2,7 +2,6 @@ import numpy as np
 import copy
 from constants import MEASUREMENT_ROW, ENGINE_PATH
 from poseconv import locate_detection
-from localization import OliverLocalization
 import json
 
 

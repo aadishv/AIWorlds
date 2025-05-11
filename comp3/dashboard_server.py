@@ -2,12 +2,12 @@ import logging
 import os
 import sys
 import time
-import threading
 import json
 import numpy as np
 import cv2
 from flask import Flask, Response, stream_with_context, redirect, request, jsonify
 from flask_cors import CORS
+
 
 def gstreamer_pipeline(
     sensor_id=0,
@@ -37,7 +37,6 @@ def gstreamer_pipeline(
     )
 
 
-
 class DashboardServer:
     def __init__(self, app_instance):
         self.app_instance = app_instance
@@ -49,9 +48,9 @@ class DashboardServer:
         app = self.flask_app
         app_instance = self.app_instance
 
-        def generate_frames(type):
+        def _generate_frames(type):
             while True:
-                color_img, depth_img, _ = app_instance.camera.frames
+                color_img, depth_img = app_instance.camera.frames
 
                 if color_img is None or depth_img is None:
                     print(
@@ -91,56 +90,14 @@ class DashboardServer:
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
                 time.sleep(1/15)
 
-        @app.route('/<type>.mjpg')
-        def video_feed(type):
-            if type not in ['color', 'depth']:
-                return "Invalid stream type", 404
-            return Response(generate_frames(type),
-                            mimetype='multipart/x-mixed-replace; boundary=frame')
+        def _sse_generate():
+            while True:
+                data = app_instance.most_recent_result
+                payload = f"data: {json.dumps(data)}\n\n"
+                yield payload
+                time.sleep(1/30)
 
-        @app.route('/color2.mjpg')
-        def color2_mjpg():
-            def gen_mjpeg():
-                min_interval = 1.0 / 10
-                while True:
-                    start_time = time.time()
-                    frame = None
-                    # Thread-safe access to frames[2]
-                    camera = app_instance.camera
-                    if hasattr(camera, "_frames_lock"):
-                        with camera._frames_lock:
-                            if len(camera.frames) > 2:
-                                frame = camera.frames[2]
-                    else:
-                        if len(camera.frames) > 2:
-                            frame = camera.frames[2]
-                    if frame is not None:
-                        ret, jpeg = cv2.imencode('.jpg', frame)
-                        if ret:
-                            yield (b'--frame\r\n'
-                                   b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-                    elapsed = time.time() - start_time
-                    if elapsed < min_interval:
-                        time.sleep(min_interval - elapsed)
-            return Response(gen_mjpeg(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-        @app.route('/events')
-        def sse_events():
-            def generate():
-                while True:
-                    data = app_instance.most_recent_result
-                    payload = f"data: {json.dumps(data)}\n\n"
-                    yield payload
-                    time.sleep(1/30)
-            headers = {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no'
-            }
-            return Response(stream_with_context(generate()), headers=headers)
-
-        @app.route('/update_hsv', methods=['POST'])
-        def update_hsv_config():
+        def _update_hsv_config():
             try:
                 config_data = request.get_json()
                 if config_data is None:
@@ -162,15 +119,42 @@ class DashboardServer:
                         json.dump(config_to_write, f, indent=4)
                     return jsonify({"status": "success", "message": "HSV config updated", "data": config_to_write}), 200
                 except IOError as e:
-                    print(f"Error writing to HSV config file {json_file_path}: {e}")
+                    print(
+
+                        f"Error writing to HSV config file {json_file_path}: {e}")
                     return jsonify({"status": "error", "message": f"Failed to write config file: {e}"}), 500
             except Exception as e:
-                print(f"An unexpected error occurred in /update_hsv endpoint: {e}")
+                print(
+
+                    f"An unexpected error occurred in /update_hsv endpoint: {e}")
                 return jsonify({"status": "error", "message": f"An internal error occurred: {e}"}), 500
+
+        def _index():
+            return redirect('http://localhost:4321/tools/vairc')
+
+        @app.route('/<type>.mjpg')
+        def video_feed(type):
+            if type not in ['color', 'depth']:
+                return "Invalid stream type", 404
+            return Response(_generate_frames(type),
+                            mimetype='multipart/x-mixed-replace; boundary=frame')
+
+        @app.route('/events')
+        def sse_events():
+            headers = {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'
+            }
+            return Response(stream_with_context(_sse_generate()), headers=headers)
+
+        @app.route('/update_hsv', methods=['POST'])
+        def update_hsv_config():
+            return _update_hsv_config()
 
         @app.route('/')
         def index():
-            return redirect('http://localhost:4321/tools/vairc')
+            return _index()
 
     def run(self):
         log = logging.getLogger('werkzeug')
@@ -178,4 +162,5 @@ class DashboardServer:
         os.environ['WERKZEUG_RUN_MAIN'] = 'true'
         cli = sys.modules['flask.cli']
         cli.show_server_banner = lambda *args, **kwargs: None
-        self.flask_app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
+        self.flask_app.run(host='0.0.0.0', port=5000,
+                           threaded=True, debug=False)

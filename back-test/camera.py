@@ -3,9 +3,9 @@ import cv2
 def gstreamer_pipeline(
     capture_width=640,
     capture_height=360,
-    display_width=640,
-    display_height=360,
-    framerate=21,
+    display_width=213,
+    display_height=120,
+    framerate=10,
     flip_method=0,
 ):
     return (
@@ -34,6 +34,8 @@ def gen_frames():
         ret, frame = cap.read()
         if not ret:
             break
+        # Ensure frame is scaled to 213x120 (in case pipeline doesn't do it)
+        frame = cv2.resize(frame, (213, 120))
         ret, buffer = cv2.imencode('.jpg', frame)
         if not ret:
             continue

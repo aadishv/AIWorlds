@@ -210,18 +210,11 @@ class CameraWorker:
         # Set initial HSV parameters from the JSON file immediately
         self._update_hsv_parameters_from_json()
 
-        # color, depth, rbp - Initialize with correct shapes and types
-        self._frames_lock = threading.Lock()
+        # color, depth - Initialize with correct shapes and types
         self.frames = (
             np.zeros((480, 640, 3), dtype=np.uint8),  # BGR color
             np.zeros((480, 640), dtype=np.float32),   # Depth in meters
-            None  # Jetson CSI frame (will be set by thread)
         )
-
-        # Start Jetson CSI camera thread
-        self._rbp_running = True
-        self._rbp_thread = threading.Thread(target=self._rbp_camera_worker, daemon=True)
-        self._rbp_thread.start()
 
     def _update_hsv_parameters_from_json(self):
         """Reads HSV parameters from the JSON file and updates _processing."""
@@ -277,70 +270,13 @@ class CameraWorker:
                 frames = self._camera.get_frames()
                 if frames is None:
                     print("Failed to get frames, attempting to continue...")
-                    continue
 
                 # Process frames
-                color_corr, depth_aligned = self._processing.process_frames(frames)
-
-                with self._frames_lock:
-                    old_rbp = self.frames[2] if len(self.frames) > 2 else None
-                    if color_corr is not None and depth_aligned is not None:
-                        self.frames = (color_corr, depth_aligned, old_rbp)
-                    else:
-                        print("Warning: Frame processing failed, frames not updated.")
-
-        except KeyboardInterrupt:
-            print("Keyboard interrupt received, stopping worker.")
-        except Exception as e:
-            print(f"An unexpected error occurred in worker loop: {e}")
+                self.frames = self._processing.process_frames(
+                    frames)
         finally:
             self._camera.stop()
             print("Camera worker stopped.")
 
-    def _rbp_camera_worker(self):
-        """Continuously grabs the latest Jetson CSI (RBP) camera frame using OpenCV."""
-        def gstreamer_pipeline(
-            sensor_id=0,
-            capture_width=1920,
-            capture_height=1080,
-            display_width=960,
-            display_height=540,
-            framerate=10,
-            flip_method=0,
-        ):
-            return (
-                "nvarguscamerasrc sensor-id=%d ! "
-                "video/x-raw(memory:NVMM), width=(int)%d, height=(int)%d, framerate=(fraction)%d/1 ! "
-                "nvvidconv flip-method=%d ! "
-                "video/x-raw, width=(int)%d, height=(int)%d, format=(string)BGRx ! "
-                "videoconvert ! "
-                "video/x-raw, format=(string)BGR ! appsink drop=1 max-buffers=1 sync=false"
-                % (
-                    sensor_id,
-                    capture_width,
-                    capture_height,
-                    framerate,
-                    flip_method,
-                    display_width,
-                    display_height,
-                )
-            )
-        cap = cv2.VideoCapture(gstreamer_pipeline(framerate=10), cv2.CAP_GSTREAMER)
-        try:
-            while self._rbp_running:
-                ret, frame = cap.read()
-                if ret:
-                    with self._frames_lock:
-                        old_color, old_depth = self.frames[0], self.frames[1]
-                        self.frames = (old_color, old_depth, frame)
-                time.sleep(0.001)
-        finally:
-            cap.release()
-
     def close(self):
-        """External method to stop the camera."""
-        # This might be called from another thread or the main program to shut down
-        self._rbp_running = False
-        if hasattr(self, "_rbp_thread"):
-            self._rbp_thread.join()
         self._camera.stop()
