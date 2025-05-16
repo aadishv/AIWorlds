@@ -152,6 +152,33 @@ class DashboardServer:
         def update_hsv_config():
             return _update_hsv_config()
 
+        def run_events(include_old):
+            yield "\n" # for the page to load
+            last_len = 0 if include_old else len(self.app_instance.v5_logs)
+            while True:
+                for stuff in self.app_instance.v5_logs[last_len:]:
+                    yield stuff + "\n"
+                last_len = len(self.app_instance.v5_logs)
+                time.sleep(1.0 / 30.0)
+
+        @app.route('/terminal')
+        def v5_logger():
+            headers = {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'
+            }
+            return Response(stream_with_context(run_events(True)), headers=headers)
+        # does not include old stuff
+        @app.route('/terminal2')
+        def v5_logger_no_include():
+            headers = {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'
+            }
+            return Response(stream_with_context(run_events(False)), headers=headers)
+
         @app.route('/')
         def index():
             return _index()

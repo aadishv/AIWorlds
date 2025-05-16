@@ -73,10 +73,12 @@ class Camera:
 
 
 class Processing:
-    def __init__(self, depth_scale, profile):
+    def __init__(self, depth_scale, profile, map_x_path="map_x.npy", map_y_path="map_y.npy"):
         """
         depth_scale : the meter‐per‐unit scale from depth_sensor.get_depth_scale()
         profile     : rs.pipeline_profile returned by pipeline.start()
+        map_x_path  : path to .npy file for map_x
+        map_y_path  : path to .npy file for map_y
         """
         self.depth_scale = depth_scale
 
@@ -96,37 +98,57 @@ class Processing:
 
         w, h = cin.width, cin.height
 
+        # Try to load map_x and map_y from .npy files if they exist
+        if os.path.exists(map_x_path) and os.path.exists(map_y_path):
+            try:
+                map_x = np.load(map_x_path)
+                map_y = np.load(map_y_path)
+                if map_x.shape == (h, w) and map_y.shape == (h, w):
+                    print(f"Loaded map_x and map_y from {map_x_path} and {map_y_path}")
+                    self.map_x = map_x
+                    self.map_y = map_y
+                else:
+                    print("map_x or map_y shape mismatch, regenerating maps.")
+                    raise ValueError("Shape mismatch")
+            except Exception as e:
+                print(f"Error loading map_x/map_y from .npy files: {e}. Regenerating maps.")
+                self._generate_and_save_maps(cin, din, ext, w, h, map_x_path, map_y_path)
+        else:
+            self._generate_and_save_maps(cin, din, ext, w, h, map_x_path, map_y_path)
+
+        # --- HSV gains - Will be updated from JSON ---
+        self.HUE = 0.0  # Initialize to neutral, will be set by JSON read
+        self.SATURATION = 1.0  # Initialize to neutral
+        self.VALUE = 1.0  # Initialize to neutral
+
+    def _generate_and_save_maps(self, cin, din, ext, w, h, map_x_path, map_y_path):
         # build a LUT so that (u_color,v_color) → (u_depth,v_depth)
+        print("Generating map_x and map_y, this may take a moment...")
         map_x = np.zeros((h, w), dtype=np.float32)
         map_y = np.zeros((h, w), dtype=np.float32)
 
         for v in range(h):
             for u in range(w):
                 # back‑project this color‑pixel at unit depth into 3D color coords
-                # rs2_deproject_pixel_to_point returns a float[3]
                 pt_c = rs.rs2_deproject_pixel_to_point(
                     cin, [float(u), float(v)], 1.0)
                 # transform into depth camera coords (using matrix multiplication concept)
-                # Extrinsics rotation is a 3x3 matrix stored in a flat list of 9 elements
-                Xd = ext.rotation[0]*pt_c[0] + ext.rotation[1] * \
-                    pt_c[1] + ext.rotation[2]*pt_c[2] + ext.translation[0]
-                Yd = ext.rotation[3]*pt_c[0] + ext.rotation[4] * \
-                    pt_c[1] + ext.rotation[5]*pt_c[2] + ext.translation[1]
-                Zd = ext.rotation[6]*pt_c[0] + ext.rotation[7] * \
-                    pt_c[1] + ext.rotation[8]*pt_c[2] + ext.translation[2]
+                Xd = ext.rotation[0]*pt_c[0] + ext.rotation[1]*pt_c[1] + ext.rotation[2]*pt_c[2] + ext.translation[0]
+                Yd = ext.rotation[3]*pt_c[0] + ext.rotation[4]*pt_c[1] + ext.rotation[5]*pt_c[2] + ext.translation[1]
+                Zd = ext.rotation[6]*pt_c[0] + ext.rotation[7]*pt_c[1] + ext.rotation[8]*pt_c[2] + ext.translation[2]
                 # project back to depth image pixel
-                # rs2_project_point_to_pixel returns a float[2]
                 px = rs.rs2_project_point_to_pixel(din, [Xd, Yd, Zd])
                 map_x[v, u] = px[0]
                 map_y[v, u] = px[1]
 
         self.map_x = map_x
         self.map_y = map_y
-
-        # --- HSV gains - Will be updated from JSON ---
-        self.HUE = 0.0  # Initialize to neutral, will be set by JSON read
-        self.SATURATION = 1.0  # Initialize to neutral
-        self.VALUE = 1.0  # Initialize to neutral
+        try:
+            np.save(map_x_path, map_x)
+            np.save(map_y_path, map_y)
+            print(f"Saved map_x to {map_x_path} and map_y to {map_y_path}")
+        except Exception as e:
+            print(f"Error saving map_x/map_y to .npy files: {e}")
 
     def process_image(self, image):
         """Apply the same HSV‐based tweak as before using current self.HUE, etc."""
@@ -202,8 +224,12 @@ class CameraWorker:
         if not self._camera.start():
             raise RuntimeError("Failed to start camera pipeline.")
 
+        # Paths for map_x and map_y .npy files
+        self.map_x_path = "map_x.npy"
+        self.map_y_path = "map_y.npy"
+
         self._processing = Processing(
-            self._camera.depth_scale, self._camera.profile)
+            self._camera.depth_scale, self._camera.profile, self.map_x_path, self.map_y_path)
 
         # Set initial HSV parameters from the JSON file immediately
         self._update_hsv_parameters_from_json()

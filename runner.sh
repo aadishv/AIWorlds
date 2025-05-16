@@ -1,7 +1,5 @@
-bash runner2.sh kill
+cd ~/AIWorlds
+bash runner2.sh
 cd comp3
-sudo python3.6 main.py ser
-
-
-# cd back-test
-# python3.6 app.py
+rm output.txt
+/usr/bin/python3.6 main.py ser

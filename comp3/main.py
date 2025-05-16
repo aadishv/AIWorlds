@@ -16,6 +16,7 @@ class App:
         self.camera = CameraWorker()
         self.inference = InferenceWorker(self)
         self.most_recent_result = {}
+        self.v5_logs = []
 
     def service_simulator(self):
         self.post = Processing(self, (0, 0, 0), self.camera._processing.fl)
@@ -39,11 +40,11 @@ class App:
                 try:
                     data = json.loads(line)
                 except Exception as e:
-                    print("error with", line, e)
+                    # log for terminal use
+                    self.v5_logs.append(line)
                     continue
 
                 if first:
-                    print(data)
                     post = Processing(
                         self, (data['x'], data['y'], data['theta']), self.camera._processing.fl)
                     first = False
@@ -56,8 +57,8 @@ class App:
                 theta = data.get("theta", 0)
                 # returns the full {pose,stuff,flag,jetson}
                 self.most_recent_result = post.update((x, y, theta))
-                print(self.most_recent_result)
                 v5_json = post.convert_to_v5(self.most_recent_result)
+                #print(v5_json)
                 ser.write((v5_json + "\n").encode("utf-8"))
                 time.sleep(1.0 / 30.0)
             except serial.SerialException as e:
