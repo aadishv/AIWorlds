@@ -28,42 +28,46 @@ class App:
     def service_serial(self):
         port = "/dev/ttyACM1"
         baud = 115200
-        ser = serial.Serial(port, baud, timeout=None)
+        try:
+            ser = serial.Serial(port, baud, timeout=None)
+        except Exception as _:
+            ser = serial.Serial("/dev/ttyACM2", baud, timeout=None)
         post = None
         first = True
         while True:
+            time.sleep(1.0 / 30.0)
             try:
                 if not ser:
                     ser = serial.Serial(port, baud, timeout=None)
                 line = ser.readline().decode("utf-8", "replace").strip()
+                print(line)
                 line = "".join(c for c in line if ord(c) < 128 and ord(c) > 0)
                 try:
                     data = json.loads(line)
+
+                    if first:
+                        post = Processing(
+                            self, (data['x'], data['y'], data['theta']), self.camera._processing.fl)
+                        first = False
+                        # Optionally respond with an “ack” or immediately run an update
+                        continue
+
+                    # Subsequent messages contain only theta (or {"theta":…})
+                    x = data.get("x", 0)
+                    y = data.get("y", 0)
+                    theta = data.get("theta", 0)
+                    # returns the full {pose,stuff,flag,jetson}
+                    self.most_recent_result = post.update((x, y, theta))
+                    v5_json = post.convert_to_v5(self.most_recent_result)
+                    #print(v5_json)
+                    ser.write((v5_json + "\n").encode("utf-8"))
                 except Exception as e:
-                    # log for terminal use
                     self.v5_logs.append(line)
                     continue
-
-                if first:
-                    post = Processing(
-                        self, (data['x'], data['y'], data['theta']), self.camera._processing.fl)
-                    first = False
-                    # Optionally respond with an “ack” or immediately run an update
-                    continue
-
-                # Subsequent messages contain only theta (or {"theta":…})
-                x = data.get("x", 0)
-                y = data.get("y", 0)
-                theta = data.get("theta", 0)
-                # returns the full {pose,stuff,flag,jetson}
-                self.most_recent_result = post.update((x, y, theta))
-                v5_json = post.convert_to_v5(self.most_recent_result)
-                #print(v5_json)
-                ser.write((v5_json + "\n").encode("utf-8"))
-                time.sleep(1.0 / 30.0)
             except serial.SerialException as e:
                 print("Encountered error in serial loop:", e)
                 del ser
+                ser = None
                 time.sleep(1.0)
 
     def close(self):

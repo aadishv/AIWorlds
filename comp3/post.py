@@ -29,7 +29,7 @@ class Processing:
             right = min(detection["x"] + width / 2, depth_img.shape[1])
             depth_img = depth_img[int(top):int(
                 bottom), int(left):int(right)].astype(float).flatten()  # * self.depth_scale
-            return np.percentile(depth_img[depth_img > 0], 10)
+            return np.percentile(depth_img[depth_img > 0], 10) + (6.5/39.37) # add offset because skibid
         except Exception:
             return -1
 
@@ -105,7 +105,7 @@ class Processing:
         self.detections = [
             i for i in detections
             # if i['class'] not in ['red', 'blue'] or  ...
-            if i['confidence'] > 0.3
+            if i['confidence'] > 0.7
         ]
 
         for det in self.detections:
