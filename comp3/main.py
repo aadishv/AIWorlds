@@ -26,19 +26,17 @@ class App:
             time.sleep(max(0, 1.0 / 30.0 - (time.time() - start)))
 
     def service_serial(self):
-        port = "/dev/ttyACM1"
-        baud = 115200
-        try:
-            ser = serial.Serial(port, baud, timeout=None)
-        except Exception as _:
-            ser = serial.Serial("/dev/ttyACM2", baud, timeout=None)
+        ser = None
         post = None
         first = True
         while True:
             time.sleep(1.0 / 30.0)
             try:
                 if not ser:
-                    ser = serial.Serial(port, baud, timeout=None)
+                    try:
+                        ser = serial.Serial("/dev/ttyACM1", 115200, timeout=None)
+                    except Exception:
+                        ser = serial.Serial("/dev/ttyACM2", 115200, timeout=None)
                 line = ser.readline().decode("utf-8", "replace").strip()
                 print(line)
                 line = "".join(c for c in line if ord(c) < 128 and ord(c) > 0)
