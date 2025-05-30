@@ -44,51 +44,83 @@ class DashboardServer:
         CORS(self.flask_app, resources={r"/*": {"origins": "*"}})
         self._setup_routes()
 
+    def _generate_frames(self, type):
+        while True:
+            color_img, depth_img = self.app_instance.camera.frames
+
+            if color_img is None or depth_img is None:
+                print(
+                    f"Warning: generate_frames received None for {type} image.")
+                time.sleep(0.1)
+                continue
+
+            frame_to_stream = None
+            if type == 'color':
+                frame_to_stream = color_img.copy()
+            elif type == 'depth':
+                max_depth = depth_img.max()
+                if max_depth > 0:
+                    depth_8u = cv2.normalize(
+                        depth_img, None,
+                        alpha=255, beta=0,
+                        norm_type=cv2.NORM_MINMAX,
+                        dtype=cv2.CV_8U
+                    )
+                    frame_to_stream = cv2.applyColorMap(
+                        depth_8u, cv2.COLORMAP_JET)
+                else:
+                    frame_to_stream = np.zeros_like(color_img)
+
+            if frame_to_stream is None:
+                frame_to_stream = np.zeros_like(color_img)
+
+            frame_to_stream = cv2.resize(frame_to_stream, (320, 240))
+            ret, buffer = cv2.imencode('.jpg', frame_to_stream)
+            if not ret:
+                print(f"Failed to encode frame for type {type}")
+                time.sleep(0.1)
+                continue
+
+            frame_bytes = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            time.sleep(1/15)
+
+    def _update_hsv_config(self):
+        try:
+            config_data = request.get_json()
+            if config_data is None:
+                return jsonify({"status": "error", "message": "Invalid JSON received"}), 400
+            required_keys = ["HUE", "SATURATION", "VALUE"]
+            config_to_write = {}
+            try:
+                for key in required_keys:
+                    if key not in config_data:
+                        return jsonify({"status": "error", "message": f"Missing key: '{key}'"}), 400
+                    config_to_write[key] = float(config_data[key])
+            except ValueError:
+                return jsonify({"status": "error", "message": "Values for HUE, SATURATION, and VALUE must be numbers"}), 400
+            except TypeError:
+                return jsonify({"status": "error", "message": "Invalid data type for HUE, SATURATION, or VALUE"}), 400
+            json_file_path = self.app_instance.camera.json_path
+            try:
+                with open(json_file_path, 'w') as f:
+                    json.dump(config_to_write, f, indent=4)
+                return jsonify({"status": "success", "message": "HSV config updated", "data": config_to_write}), 200
+            except IOError as e:
+                print(
+
+                    f"Error writing to HSV config file {json_file_path}: {e}")
+                return jsonify({"status": "error", "message": f"Failed to write config file: {e}"}), 500
+        except Exception as e:
+            print(
+
+                f"An unexpected error occurred in /update_hsv endpoint: {e}")
+            return jsonify({"status": "error", "message": f"An internal error occurred: {e}"}), 500
+
     def _setup_routes(self):
         app = self.flask_app
         app_instance = self.app_instance
-
-        def _generate_frames(type):
-            while True:
-                color_img, depth_img = app_instance.camera.frames
-
-                if color_img is None or depth_img is None:
-                    print(
-                        f"Warning: generate_frames received None for {type} image.")
-                    time.sleep(0.1)
-                    continue
-
-                frame_to_stream = None
-                if type == 'color':
-                    frame_to_stream = color_img.copy()
-                elif type == 'depth':
-                    max_depth = depth_img.max()
-                    if max_depth > 0:
-                        depth_8u = cv2.normalize(
-                            depth_img, None,
-                            alpha=255, beta=0,
-                            norm_type=cv2.NORM_MINMAX,
-                            dtype=cv2.CV_8U
-                        )
-                        frame_to_stream = cv2.applyColorMap(
-                            depth_8u, cv2.COLORMAP_JET)
-                    else:
-                        frame_to_stream = np.zeros_like(color_img)
-
-                if frame_to_stream is None:
-                    frame_to_stream = np.zeros_like(color_img)
-
-                frame_to_stream = cv2.resize(frame_to_stream, (320, 240))
-                ret, buffer = cv2.imencode('.jpg', frame_to_stream)
-                if not ret:
-                    print(f"Failed to encode frame for type {type}")
-                    time.sleep(0.1)
-                    continue
-
-                frame_bytes = buffer.tobytes()
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                time.sleep(1/15)
 
         def _sse_generate():
             while True:
@@ -97,37 +129,7 @@ class DashboardServer:
                 yield payload
                 time.sleep(1/30)
 
-        def _update_hsv_config():
-            try:
-                config_data = request.get_json()
-                if config_data is None:
-                    return jsonify({"status": "error", "message": "Invalid JSON received"}), 400
-                required_keys = ["HUE", "SATURATION", "VALUE"]
-                config_to_write = {}
-                try:
-                    for key in required_keys:
-                        if key not in config_data:
-                            return jsonify({"status": "error", "message": f"Missing key: '{key}'"}), 400
-                        config_to_write[key] = float(config_data[key])
-                except ValueError:
-                    return jsonify({"status": "error", "message": "Values for HUE, SATURATION, and VALUE must be numbers"}), 400
-                except TypeError:
-                    return jsonify({"status": "error", "message": "Invalid data type for HUE, SATURATION, or VALUE"}), 400
-                json_file_path = app_instance.camera.json_path
-                try:
-                    with open(json_file_path, 'w') as f:
-                        json.dump(config_to_write, f, indent=4)
-                    return jsonify({"status": "success", "message": "HSV config updated", "data": config_to_write}), 200
-                except IOError as e:
-                    print(
 
-                        f"Error writing to HSV config file {json_file_path}: {e}")
-                    return jsonify({"status": "error", "message": f"Failed to write config file: {e}"}), 500
-            except Exception as e:
-                print(
-
-                    f"An unexpected error occurred in /update_hsv endpoint: {e}")
-                return jsonify({"status": "error", "message": f"An internal error occurred: {e}"}), 500
 
         def _index():
             return redirect('http://localhost:4321/tools/vairc')
@@ -136,7 +138,7 @@ class DashboardServer:
         def video_feed(type):
             if type not in ['color', 'depth']:
                 return "Invalid stream type", 404
-            return Response(_generate_frames(type),
+            return Response(self._generate_frames(type),
                             mimetype='multipart/x-mixed-replace; boundary=frame')
 
         @app.route('/events')
@@ -150,7 +152,7 @@ class DashboardServer:
 
         @app.route('/update_hsv', methods=['POST'])
         def update_hsv_config():
-            return _update_hsv_config()
+            return self._update_hsv_config()
 
         def run_events(include_old):
             yield "\n" # for the page to load

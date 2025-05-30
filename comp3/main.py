@@ -59,7 +59,7 @@ class App:
                     v5_json = post.convert_to_v5(self.most_recent_result)
                     #print(v5_json)
                     ser.write((v5_json + "\n").encode("utf-8"))
-                except Exception as e:
+                except Exception:
                     self.v5_logs.append(line)
                     continue
             except serial.SerialException as e:

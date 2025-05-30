@@ -137,7 +137,7 @@ class Worker:
                 time_elapsed = time.time() - start_time
                 if time_elapsed < MIN_LATENCY: # cap at 20 fps
                     time.sleep(MIN_LATENCY - time_elapsed)
-                    
+
         finally:
             # pop when you exit, so you don’t leak
             self.engine.cuda_ctx.pop()
@@ -147,7 +147,7 @@ class Worker:
         # stop excessive logging of requests
         log = logging.getLogger('werkzeug')
         log.setLevel(logging.ERROR)
-        
+
         def generate(type):
             boundary = b'--frame'
             while True:
@@ -211,8 +211,8 @@ class Worker:
                 # throttle to ~30fps
                 time.sleep(1/30)
 
-       
-        
+
+
         app = Flask("3151App")
         CORS(app, resources={r"/*": {"origins": "*"}})
 
@@ -269,18 +269,18 @@ List of workers:
         * Reads serial data from USB port
         * Responds in JSON
 """
-if __name__ = "main":
+if __name__ == "main":
     shutdown = threading.Event()
-    
+
     def handle_sigterm(signum, frame):
         shutdown.set()
-    
-    
+
+
     signal.signal(signal.SIGINT, handle_sigterm)
     signal.signal(signal.SIGTERM, handle_sigterm)
     # initialize worker
     worker = Worker("/home/aadish/AIWorlds/comp2/yolov5n-best.engine", 240)
-    
+
     threads = []
     # camera worker
     t1 = threading.Thread(target=worker.camera_worker, daemon=True)
@@ -294,14 +294,14 @@ if __name__ = "main":
     # serial worker
     t4 = threading.Thread(target=worker.serial_worker, daemon=True)
     threads.append(t4)
-    
+
     # start them all
     for t in threads:
         t.start()
-    
+
     # now block here until CTRL‑C or SIGTERM
     shutdown.wait()
-    
+
     # clean up
     worker.model.close()
     # if your threads check shutdown flag, they can exit cleanly
