@@ -3,7 +3,7 @@ import copy
 from constants import MEASUREMENT_ROW, ENGINE_PATH
 from poseconv import locate_detection
 import json
-
+import datetime, time, os, cv2
 
 class FakeDetection:  # use w/ duck-typing
     def __init__(self):
@@ -18,6 +18,37 @@ class Processing:
         self.depth_scale = app.camera._camera.depth_scale
         self.fl = focal_length
         self.t = 0
+        self.recording_path = None
+
+    def record(self, object):
+        if self.recording_path is None:
+            self.recording_path = f"/home/vex/AIWorlds/recordings/{datetime.datetime.now().strftime('%m.%d::%H:%M:%S')}"
+            self.color_path = f"{self.recording_path}/color"
+            self.depth_path = f"{self.recording_path}/depth"
+            self.log_path = f"{self.recording_path}/log"
+            os.makedirs(self.recording_path, exist_ok=True)
+            os.makedirs(self.color_path, exist_ok=True)
+            os.makedirs(self.depth_path, exist_ok=True)
+            os.makedirs(self.log_path, exist_ok=True)
+        t = time.time()
+
+        color_img, depth_img = self.app.camera.frames
+        cv2.imwrite(f"{self.color_path}/{t}.jpg", color_img)
+        max_depth = depth_img.max()
+        if max_depth > 0:
+            depth_8u = cv2.normalize(
+                depth_img, None,
+                alpha=255, beta=0,
+                norm_type=cv2.NORM_MINMAX,
+                dtype=cv2.CV_8U
+            )
+            depth_img = cv2.applyColorMap(
+                depth_8u, cv2.COLORMAP_JET)
+        else:
+            depth_img = np.zeros_like(color_img)
+        cv2.imwrite(f"{self.depth_path}/{t}.jpg", depth_img)
+        with open(f"{self.log_path}/{t}.json", "w") as f:
+            json.dump(object, f)
 
     def get_depth(self, detection, depth_img):
         try:
@@ -138,5 +169,6 @@ class Processing:
             'flag': flag,
             'jetson': self.get_jetson_info()
         }
-        _ = self.convert_to_v5(output)
+
+        self.record(output)
         return output

@@ -26,7 +26,6 @@ import numpy as np
 import json
 import os  # Import os to check file existence
 
-
 # --- Existing Camera and Processing Classes (unchanged) ---
 
 class Camera:
@@ -214,7 +213,7 @@ class Processing:
 
 # lightweight wrapper class to suit the Worker
 class CameraWorker:
-    def __init__(self, json_path="hsv_config.json", update_interval=5):
+    def __init__(self, json_path="/home/vex/AIWorlds/comp3/hsv_config.json", update_interval=5):
         self.json_path = json_path
         self.update_interval = update_interval
         self._frame_counter = 0
